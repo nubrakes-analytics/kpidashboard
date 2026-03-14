@@ -584,13 +584,12 @@ export default function Dashboard() {
 }
 
 function aggregateSeriesByToggle(rows, period) {
+  const normalizedPeriod = period === "week" ? "week" : "month";
   const groups = {};
 
   rows.forEach(r => {
     const key =
-      period === "day"
-        ? (r.date || "").slice(0, 10)
-        : period === "week"
+      normalizedPeriod === "week"
         ? (r.Week || "").slice(0, 10)
         : (r.Month || "").slice(0, 7);
 
@@ -625,14 +624,13 @@ function aggregateSeriesByToggle(rows, period) {
 }
 
 function buildSeriesBreakdown(rows, period, groupKey) {
+  const normalizedPeriod = period === "week" ? "week" : "month";
   const grouped = {};
 
   rows.forEach(r => {
     const group = r[groupKey] || "Unknown";
     const timeKey =
-      period === "day"
-        ? (r.date || "").slice(0, 10)
-        : period === "week"
+      normalizedPeriod === "week"
         ? (r.Week || "").slice(0, 10)
         : (r.Month || "").slice(0, 7);
 
@@ -673,7 +671,7 @@ function buildSeriesBreakdown(rows, period, groupKey) {
       return { group, points };
     });
 }
-
+  
 function getScopedAggregates(rows, period, market, chanCat) {
   const filteredRows = getFilteredRows(rows, market, chanCat);
   const series = aggregateSeriesByToggle(filteredRows, period);
