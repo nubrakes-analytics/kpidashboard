@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 
 const DATA_URL = "https://ai-data.jonathan-libiran.workers.dev/data-ai.json";
-const AI_MODEL = "claude-haiku-4-5-20251001";
 
 const METRICS = [
   { key: "leads", label: "Leads", fmt: v => Math.round(v).toLocaleString(), color: "#6366f1" },
@@ -159,15 +158,22 @@ function calcPacing(period) {
   return null;
 }
 
-const IS_WORKERS = typeof window !== "undefined" && window.location.hostname.includes("workers.dev");
-const AI_ENDPOINT = IS_WORKERS ? "/api/ai" : "https://api.anthropic.com/v1/messages";
+const AI_MODEL = "gpt-4.1";
+const AI_ENDPOINT = "/api/ai";
 
-function callAPI(messages) {
-  return fetch(AI_ENDPOINT, {
+async function callAPI(messages) {
+  const response = await fetch(AI_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: AI_MODEL, max_tokens: 1000, messages })
-  }).then(r => r.json());
+    body: JSON.stringify({ model: AI_MODEL, messages })
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`AI request failed: ${response.status} ${text}`);
+  }
+
+  return response.json();
 }
 
 async function loadData() {
@@ -567,34 +573,45 @@ export default function Dashboard() {
   const isRateOrAov = key => key.includes("Rate") || key === "aov";
 
   const fetchAI = useCallback((question) => {
-    setAiLoading(true);
+  setAiLoading(true);
 
-    const summary = METRICS.map(m => {
-      const c = curr[m.key] || 0;
-      const p = prev[m.key] || 0;
-      const ch = pct(c, p).toFixed(1);
-      return m.label + ": " + m.fmt(c) + " (" + (ch > 0 ? "+" : "") + ch + "% vs prior)";
-    }).join(", ");
+  const summary = METRICS.map(m => {
+    const c = curr[m.key] || 0;
+    const p = prev[m.key] || 0;
+    const ch = pct(c, p).toFixed(1);
+    return `${m.label}: ${m.fmt(c)} (${ch > 0 ? "+" : ""}${ch}% vs prior)`;
+  }).join(", ");
 
-    const rawSample = JSON.stringify(filtered.slice(0, 50));
-    const systemCtx =
-      "You are a business analyst for NuBrakes, a mobile brake repair service. " +
-      "Market: " + market + ", Channel: " + chanCat + ", Period: " + overviewLabel + ". " +
-      "Metrics: " + summary + ". Raw data (up to 50 rows): " + rawSample + ".";
+  const rawSample = JSON.stringify(filtered.slice(0, 50));
 
-    setChatHistory(h => [...h, { role: "user", text: question }]);
+  const systemCtx =
+    `You are a business analyst for NuBrakes, a mobile brake repair service. ` +
+    `Market: ${market}, Channel: ${chanCat}, Period: ${overviewLabel}. ` +
+    `Metrics: ${summary}. Raw data (up to 50 rows): ${rawSample}.`;
 
-    callAPI([{ role: "user", content: systemCtx + "\n\nQuestion: " + question + "\n\nAnswer clearly and concisely using the data." }])
-      .then(d => {
-        const t = (d.content || []).map(c => c.text || "").join("");
-        setChatHistory(h => [...h, { role: "assistant", text: t || "No response." }]);
-        setAiLoading(false);
-      })
-      .catch(() => {
-        setChatHistory(h => [...h, { role: "assistant", text: "Failed to get a response." }]);
-        setAiLoading(false);
-      });
-  }, [market, chanCat, curr, prev, filtered, overviewLabel]);
+  setChatHistory(h => [...h, { role: "user", text: question }]);
+
+  callAPI([
+    { role: "system", content: systemCtx },
+    { role: "user", content: `Question: ${question}\n\nAnswer clearly and concisely using the data.` }
+  ])
+    .then(d => {
+      const t =
+        d.output_text ||
+        (d.output || [])
+          .flatMap(item => item.content || [])
+          .map(c => c.text || "")
+          .join("");
+
+      setChatHistory(h => [...h, { role: "assistant", text: t || "No response." }]);
+      setAiLoading(false);
+    })
+    .catch(err => {
+      console.error(err);
+      setChatHistory(h => [...h, { role: "assistant", text: "Failed to get a response." }]);
+      setAiLoading(false);
+    });
+}, [market, chanCat, curr, prev, filtered, overviewLabel]);
 
   useEffect(() => {
     if (tab === "ai") setChatHistory([]);
