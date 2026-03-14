@@ -576,27 +576,28 @@ export default function Dashboard() {
   const isRateOrAov = key => key.includes("Rate") || key === "aov";
 
   const fetchAI = useCallback((question) => {
+  if (aiLoading) return;
   setAiLoading(true);
 
-  const summary = METRICS.map(m => {
-    const c = curr[m.key] || 0;
-    const p = prev[m.key] || 0;
-    const ch = pct(c, p).toFixed(1);
-    return `${m.label}: ${m.fmt(c)} (${ch > 0 ? "+" : ""}${ch}% vs prior)`;
+  const allDataSummary = METRICS.map(m => {
+    const agg = aggregate(rawData);
+    return `${m.label}: ${m.fmt(agg[m.key] || 0)}`;
   }).join(", ");
 
-  const rawSample = JSON.stringify(filtered.slice(0, 50));
+  const rawSample = JSON.stringify(rawData.slice(0, 200));
 
   const systemCtx =
     `You are a business analyst for NuBrakes, a mobile brake repair service. ` +
-    `Market: ${market}, Channel: ${chanCat}, Period: ${overviewLabel}. ` +
-    `Metrics: ${summary}. Raw data (up to 50 rows): ${rawSample}.`;
+    `Use the full dataset, not the current dashboard filters. ` +
+    `Current dashboard view is Market: ${market}, Channel: ${chanCat}, Period: ${overviewLabel}, but your analysis must use all available data. ` +
+    `Full dataset summary: ${allDataSummary}. ` +
+    `Raw data sample (up to 200 rows): ${rawSample}.`;
 
   setChatHistory(h => [...h, { role: "user", text: question }]);
 
   callAPI([
     { role: "system", content: systemCtx },
-    { role: "user", content: `Question: ${question}\n\nAnswer clearly and concisely using the data.` }
+    { role: "user", content: `Question: ${question}\n\nAnswer clearly and concisely using the full dataset.` }
   ])
     .then(d => {
       const t =
@@ -614,7 +615,7 @@ export default function Dashboard() {
       setChatHistory(h => [...h, { role: "assistant", text: "Failed to get a response." }]);
       setAiLoading(false);
     });
-}, [market, chanCat, curr, prev, filtered, overviewLabel]);
+}, [aiLoading, rawData, market, chanCat, overviewLabel]);
 
   useEffect(() => {
     if (tab === "ai") setChatHistory([]);
@@ -893,7 +894,9 @@ export default function Dashboard() {
         {tab === "ai" && (
           <div style={{ ...baseCardStyle, padding: isPhone ? "12px" : "16px 18px 14px" }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>💬 Ask a Question</div>
-            <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 16 }}>{market} · {chanCat} · {overviewLabel}</div>
+            <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 16 }}>
+  Using full dataset across all markets and channels
+</div>
 
             {chatHistory.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16, maxHeight: 360, overflowY: "auto", padding: "4px 0" }}>
