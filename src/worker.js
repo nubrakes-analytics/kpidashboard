@@ -1,5 +1,11 @@
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (url.pathname !== "/api/ai") {
+      return env.ASSETS.fetch(request);
+    }
+
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -17,7 +23,9 @@ export default {
     try {
       const { model, messages } = await request.json();
 
-      const systemMessage = messages.find(m => m.role === "system")?.content || "";
+      const systemMessage =
+        messages.find(m => m.role === "system")?.content || "";
+
       const userMessages = messages
         .filter(m => m.role !== "system")
         .map(m => `${m.role.toUpperCase()}: ${m.content}`)
