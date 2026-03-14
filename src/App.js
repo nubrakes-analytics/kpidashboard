@@ -624,12 +624,62 @@ function aggregateSeriesByToggle(rows, period) {
     });
 }
 
+function buildSeriesBreakdown(rows, period, groupKey) {
+  const grouped = {};
+
+  rows.forEach(r => {
+    const group = r[groupKey] || "Unknown";
+    const timeKey =
+      period === "day"
+        ? (r.date || "").slice(0, 10)
+        : period === "week"
+        ? (r.Week || "").slice(0, 10)
+        : (r.Month || "").slice(0, 7);
+
+    if (!timeKey) return;
+
+    if (!grouped[group]) grouped[group] = {};
+    if (!grouped[group][timeKey]) grouped[group][timeKey] = [];
+    grouped[group][timeKey].push(r);
+  });
+
+  return Object.keys(grouped)
+    .sort()
+    .map(group => {
+      const points = Object.keys(grouped[group])
+        .sort()
+        .map(label => {
+          const g = grouped[group][label];
+          const leads = sumK(g, "leads");
+          const booked = sumK(g, "booked");
+          const canceled = sumK(g, "canceled");
+          const completed = sumK(g, "completed");
+          const revenue = sumK(g, "revenue");
+
+          return {
+            label,
+            leads,
+            booked,
+            canceled,
+            completed,
+            revenue,
+            bookingRate: leads ? booked / leads : 0,
+            cancelRate: booked ? canceled / booked : 0,
+            conversionRate: leads ? completed / leads : 0,
+            aov: completed ? revenue / completed : 0
+          };
+        });
+
+      return { group, points };
+    });
+}
+
 function getScopedAggregates(rows, period, market, chanCat) {
   const filteredRows = getFilteredRows(rows, market, chanCat);
   const series = aggregateSeriesByToggle(filteredRows, period);
   const overall = aggregate(filteredRows);
 
-  return {
+  const result = {
     rowCount: filteredRows.length,
     market,
     channel: chanCat,
@@ -637,31 +687,76 @@ function getScopedAggregates(rows, period, market, chanCat) {
     overall,
     series
   };
+
+  if (market === "All Markets" && chanCat === "All Channels") {
+    result.seriesByMarket = buildSeriesBreakdown(filteredRows, period, "market");
+    result.seriesByChannel = buildSeriesBreakdown(filteredRows, period, "cat");
+  }
+
+  return result;
+}
+
+function shouldUseFullDataset(question) {
+  const q = (question || "").toLowerCase();
+
+  const broadTerms = [
+    "overall",
+    "all markets",
+    "all channels",
+    "full dataset",
+    "entire dataset",
+    "whole dataset",
+    "company-wide",
+    "across all markets",
+    "across all channels",
+    "national",
+    "global view",
+    "total business",
+    "entire business"
+  ];
+
+  return broadTerms.some(term => q.includes(term));
 }
 
 const fetchAI = useCallback((question) => {
   if (aiLoading) return;
   setAiLoading(true);
 
-  const scopedAgg = getScopedAggregates(rawData, period, market, chanCat);
+  const useFullDataset = shouldUseFullDataset(question);
+  const aiMarket = useFullDataset ? "All Markets" : market;
+  const aiChannel = useFullDataset ? "All Channels" : chanCat;
+
+  const scopedAgg = getScopedAggregates(rawData, period, aiMarket, aiChannel);
 
   const systemCtx = `
 You are a business analyst for NuBrakes.
 
 Use the aggregated dataset below as the source of truth.
-This data is already scoped by the current dashboard selections.
+
+Scope mode:
+- ${useFullDataset ? "Full dataset override triggered by user question" : "Current dashboard scope"}
 
 Scope:
 - Period: ${period}
-- Market: ${market}
-- Channel: ${chanCat}
+- Market: ${aiMarket}
+- Channel: ${aiChannel}
 - Row count: ${scopedAgg.rowCount}
+
+Instructions:
+- Use the provided aggregate data as the source of truth.
+- Be concise, quantitative, and business-focused.
+- Highlight trends, rankings, outliers, and likely drivers when supported by the data.
+- If the user asks for a broad or overall answer, do not limit analysis to current dashboard filters.
+- Do not invent facts that are not present in the data.
 
 Overall summary:
 ${JSON.stringify(scopedAgg.overall)}
 
-Time series:
+Main time series:
 ${JSON.stringify(scopedAgg.series)}
+
+${scopedAgg.seriesByMarket ? `Time series by market:\n${JSON.stringify(scopedAgg.seriesByMarket)}\n` : ""}
+${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedAgg.seriesByChannel)}\n` : ""}
 `;
 
   setChatHistory(h => [...h, { role: "user", text: question }]);
@@ -1040,9 +1135,9 @@ ${JSON.stringify(scopedAgg.series)}
               </button>
             </div>
 
-            <div style={{ marginTop: 8, fontSize: 11, color: "#9ca3af" }}>
-              AI will analyze your filtered data to answer your question.
-            </div>
+            <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 16 }}>
+  AI uses the current dashboard scope by default, and switches to full dataset for broad questions like “overall” or “all markets”.
+</div>
           </div>
         )}
       </div>
