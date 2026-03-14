@@ -18,16 +18,16 @@ const METRICS = [
 const CAT_COLORS = { Core:"#6366f1", Brand:"#0ea5e9", GBL:"#f59e0b", Referral:"#10b981" };
 
 const FALLBACK = [
-  {"Day":"2026-03-13T05:00:00.000Z","market":"Nashville","Channel Category":"GBL","leads":1,"jobs_booked":0,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z"},
-  {"Day":"2026-03-13T05:00:00.000Z","market":"Dallas","Channel Category":"Core","leads":1,"jobs_booked":0,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z"},
-  {"Day":"2026-03-13T05:00:00.000Z","market":"Nashville","Channel Category":"Core","leads":0,"jobs_booked":0,"canceled_jobs":0,"invoiced_customer_price":787,"jobs_completed":1,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z"},
-  {"Day":"2026-03-13T05:00:00.000Z","market":"Dallas","Channel Category":"Brand","leads":1,"jobs_booked":0,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z"},
-  {"Day":"2026-03-13T05:00:00.000Z","market":"Houston","Channel Category":"Core","leads":1,"jobs_booked":0,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z"},
-  {"Day":"2026-03-12T05:00:00.000Z","market":"Dallas","Channel Category":"Brand","leads":9,"jobs_booked":1,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z"},
-  {"Day":"2026-03-12T05:00:00.000Z","market":"Tampa","Channel Category":"Core","leads":5,"jobs_booked":1,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z"},
-  {"Day":"2026-03-12T05:00:00.000Z","market":"Dallas","Channel Category":"Core","leads":47,"jobs_booked":10,"canceled_jobs":0,"invoiced_customer_price":4344,"jobs_completed":6,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z"},
-  {"Day":"2026-03-12T05:00:00.000Z","market":"San Antonio","Channel Category":"Core","leads":20,"jobs_booked":2,"canceled_jobs":0,"invoiced_customer_price":1706,"jobs_completed":3,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z"},
-  {"Day":"2026-03-12T05:00:00.000Z","market":"Atlanta","Channel Category":"Referral","leads":5,"jobs_booked":2,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z"}
+  {"date":"2026-03-13T05:00:00.000Z","market":"Nashville","channel":"VIOC GMB","leads":1,"jobs_booked":0,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z","Channel Category":"GBL"},
+  {"date":"2026-03-13T05:00:00.000Z","market":"Dallas","channel":"CORE ORGANIC","leads":1,"jobs_booked":0,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z","Channel Category":"Core"},
+  {"date":"2026-03-13T05:00:00.000Z","market":"Nashville","channel":"CORE OPS ENTERED LEAD","leads":0,"jobs_booked":0,"canceled_jobs":0,"invoiced_customer_price":787,"jobs_completed":1,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z","Channel Category":"Core"},
+  {"date":"2026-03-13T05:00:00.000Z","market":"Dallas","channel":"VIOC BRAND EMAIL","leads":1,"jobs_booked":0,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z","Channel Category":"Brand"},
+  {"date":"2026-03-13T05:00:00.000Z","market":"Houston","channel":"CORE GMB","leads":1,"jobs_booked":0,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z","Channel Category":"Core"},
+  {"date":"2026-03-12T05:00:00.000Z","market":"Dallas","channel":"VIOC BRAND EMAIL","leads":9,"jobs_booked":1,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z","Channel Category":"Brand"},
+  {"date":"2026-03-12T05:00:00.000Z","market":"Dallas","channel":"CORE GOOGLE ADS","leads":47,"jobs_booked":10,"canceled_jobs":0,"invoiced_customer_price":4344,"jobs_completed":6,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z","Channel Category":"Core"},
+  {"date":"2026-03-12T05:00:00.000Z","market":"San Antonio","channel":"CORE GOOGLE ADS","leads":20,"jobs_booked":2,"canceled_jobs":0,"invoiced_customer_price":1706,"jobs_completed":3,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z","Channel Category":"Core"},
+  {"date":"2026-03-12T05:00:00.000Z","market":"Atlanta","channel":"VIOC REFERRAL","leads":5,"jobs_booked":2,"canceled_jobs":0,"invoiced_customer_price":0,"jobs_completed":0,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z","Channel Category":"Referral"},
+  {"date":"2026-03-12T05:00:00.000Z","market":"Houston","channel":"CORE GOOGLE ADS","leads":16,"jobs_booked":4,"canceled_jobs":0,"invoiced_customer_price":993,"jobs_completed":3,"Week":"2026-03-09T05:00:00.000Z","Month":"2026-03-01T06:00:00.000Z","Channel Category":"Core"}
 ];
 
 function sumK(arr, k) { return arr.reduce((a, r) => a + (r[k] || 0), 0); }
@@ -70,12 +70,12 @@ function fmtLabel(label, period) {
 
 function mapRows(d) {
   return d.map(r => ({
-    date: r.Day || r.date || r.Month,
-    Week: r.Week,
-    Month: r.Month,
-    market: r.market,
+    date: r.Day || r.date || r.Month || "",
+    Week: r.Week || r.Day || r.date || "",
+    Month: r.Month || r.Day || r.date || "",
+    market: r.market || "",
     channel: r.channel || "",
-    cat: r["Channel Category"],
+    cat: r["Channel Category"] || "Other",
     leads: r.leads||0,
     booked: r.jobs_booked||0,
     canceled: r.canceled_jobs||0,
