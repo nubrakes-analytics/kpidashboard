@@ -576,9 +576,10 @@ export default function Dashboard() {
   const isRateOrAov = key => key.includes("Rate") || key === "aov";
 
   function getFilteredRows(rows, market, chanCat) {
-  return rows.filter(r =>
-    (market === "All Markets" || r.market === market) &&
-    (chanCat === "All Channels" || r.cat === chanCat)
+  return rows.filter(
+    r =>
+      (market === "All Markets" || r.market === market) &&
+      (chanCat === "All Channels" || r.cat === chanCat)
   );
 }
 
@@ -621,8 +622,9 @@ function aggregateSeriesByToggle(rows, period) {
         aov: completed ? revenue / completed : 0
       };
     });
-}  
-  function getScopedAggregates(rows, period, market, chanCat) {
+}
+
+function getScopedAggregates(rows, period, market, chanCat) {
   const filteredRows = getFilteredRows(rows, market, chanCat);
   const series = aggregateSeriesByToggle(filteredRows, period);
   const overall = aggregate(filteredRows);
@@ -637,18 +639,11 @@ function aggregateSeriesByToggle(rows, period) {
   };
 }
 
-  
-  
-  const fetchAI = useCallback((question) => {
+const fetchAI = useCallback((question) => {
   if (aiLoading) return;
   setAiLoading(true);
 
-  const allDataSummary = METRICS.map(m => {
-    const agg = aggregate(rawData);
-    return `${m.label}: ${m.fmt(agg[m.key] || 0)}`;
-  }).join(", ");
-
-  const rawSample = JSON.stringify(rawData.slice(0, 200));
+  const scopedAgg = getScopedAggregates(rawData, period, market, chanCat);
 
   const systemCtx = `
 You are a business analyst for NuBrakes.
@@ -660,6 +655,7 @@ Scope:
 - Period: ${period}
 - Market: ${market}
 - Channel: ${chanCat}
+- Row count: ${scopedAgg.rowCount}
 
 Overall summary:
 ${JSON.stringify(scopedAgg.overall)}
@@ -667,11 +663,15 @@ ${JSON.stringify(scopedAgg.overall)}
 Time series:
 ${JSON.stringify(scopedAgg.series)}
 `;
+
   setChatHistory(h => [...h, { role: "user", text: question }]);
 
   callAPI([
     { role: "system", content: systemCtx },
-    { role: "user", content: `Question: ${question}\n\nAnswer clearly and concisely using the full dataset.` }
+    {
+      role: "user",
+      content: `Question: ${question}\n\nAnswer clearly and concisely using the scoped aggregated data.`
+    }
   ])
     .then(d => {
       const t =
@@ -686,10 +686,13 @@ ${JSON.stringify(scopedAgg.series)}
     })
     .catch(err => {
       console.error(err);
-      setChatHistory(h => [...h, { role: "assistant", text: "Failed to get a response." }]);
+      setChatHistory(h => [
+        ...h,
+        { role: "assistant", text: `Failed to get a response. ${err.message}` }
+      ]);
       setAiLoading(false);
     });
-}, [aiLoading, rawData, market, chanCat, overviewLabel]);
+}, [aiLoading, rawData, period, market, chanCat]);
 
   useEffect(() => {
     if (tab === "ai") setChatHistory([]);
