@@ -158,11 +158,22 @@ function DonutChart({ data, title, fmtVal }) {
   );
 }
 
-function TrendChart({ data, metricKey, metric, period, chartType }) {
-  const vals = data.map(d => d[metricKey] || 0);
+function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
+  const isRateOrAov = metricKey.includes("Rate") || metricKey==="aov";
+  // Replace last data point with projected if pacing applies
+  const vals = data.map((d, i) => {
+    const raw = d[metricKey] || 0;
+    if (i === data.length-1 && pacing && !isRateOrAov && (period==="week"||period==="month")) {
+      return raw / pacing.pct;
+    }
+    return raw;
+  });
+  const actuals = data.map(d => d[metricKey] || 0);
+  const hasProjection = pacing && !isRateOrAov && (period==="week"||period==="month");
+
   if (!vals.length) return null;
   const max = Math.max(...vals, 1);
-  const W=680, H=200, pL=56, pB=36, pT=16, pR=16, cW=W-pL-pR, cH=H-pB-pT;
+  const W=680, H=210, pL=56, pB=36, pT=16, pR=16, cW=W-pL-pR, cH=H-pB-pT;
   const bW = Math.min(cW/vals.length-2, 28);
   const step = Math.ceil(vals.length/10);
   const fmtY = v => {
@@ -173,6 +184,8 @@ function TrendChart({ data, metricKey, metric, period, chartType }) {
   const xP = i => pL+(i/(vals.length-1||1))*cW;
   const yP = v => pT+cH-(v/max)*cH;
   const gId = "lg_"+metricKey;
+  const lastIdx = vals.length-1;
+
   return (
     <svg viewBox={"0 0 "+W+" "+H} style={{width:"100%",height:"auto"}}>
       {[0,0.25,0.5,0.75,1].map(t => {
@@ -184,6 +197,7 @@ function TrendChart({ data, metricKey, metric, period, chartType }) {
           </g>
         );
       })}
+
       {chartType==="line" ? (
         <g>
           <defs>
@@ -192,18 +206,59 @@ function TrendChart({ data, metricKey, metric, period, chartType }) {
               <stop offset="100%" stopColor={metric.color} stopOpacity="0.01"/>
             </linearGradient>
           </defs>
-          <polygon points={xP(0).toFixed(1)+","+(pT+cH)+" "+vals.map((v,i)=>xP(i).toFixed(1)+","+yP(v).toFixed(1)).join(" ")+" "+xP(vals.length-1).toFixed(1)+","+(pT+cH)} fill={"url(#"+gId+")"}/>
-          <polyline points={vals.map((v,i)=>xP(i).toFixed(1)+","+yP(v).toFixed(1)).join(" ")} fill="none" stroke={metric.color} strokeWidth="2" strokeLinejoin="round"/>
-          {vals.map((v,i) => <circle key={i} cx={xP(i)} cy={yP(v)} r="3" fill={metric.color} stroke="#fff" strokeWidth="1.5"/>)}
+          {/* Area fill using actual vals except last projected */}
+          <polygon
+            points={xP(0).toFixed(1)+","+(pT+cH)+" "+vals.map((v,i)=>xP(i).toFixed(1)+","+yP(v).toFixed(1)).join(" ")+" "+xP(lastIdx).toFixed(1)+","+(pT+cH)}
+            fill={"url(#"+gId+")"}
+          />
+          {/* Solid line for historical portion */}
+          <polyline
+            points={vals.slice(0, hasProjection ? lastIdx+1 : vals.length).map((v,i)=>xP(i).toFixed(1)+","+yP(v).toFixed(1)).join(" ")}
+            fill="none" stroke={metric.color} strokeWidth="2" strokeLinejoin="round"
+          />
+          {/* Dashed line connecting last actual to projected */}
+          {hasProjection && vals.length > 1 && (
+            <line
+              x1={xP(lastIdx-1).toFixed(1)} y1={yP(actuals[lastIdx-1]).toFixed(1)}
+              x2={xP(lastIdx).toFixed(1)} y2={yP(vals[lastIdx]).toFixed(1)}
+              stroke={metric.color} strokeWidth="2" strokeDasharray="5,4" opacity="0.7"
+            />
+          )}
+          {/* Dots */}
+          {vals.map((v,i) => (
+            <circle key={i} cx={xP(i)} cy={yP(v)} r={i===lastIdx&&hasProjection?4:3}
+              fill={i===lastIdx&&hasProjection?"#3b82f6":metric.color}
+              stroke="#fff" strokeWidth="1.5"/>
+          ))}
+          {/* Projected label on last point */}
+          {hasProjection && (
+            <g>
+              <rect x={xP(lastIdx)-28} y={yP(vals[lastIdx])-22} width={56} height={16} rx="4" fill="#3b82f6"/>
+              <text x={xP(lastIdx)} y={yP(vals[lastIdx])-11} textAnchor="middle" fontSize="9" fill="#fff" fontWeight="700">
+                {"▲ "+fmtY(vals[lastIdx])}
+              </text>
+            </g>
+          )}
           {vals.map((v,i) => i%step===0 ? <text key={i} x={xP(i)} y={H-4} textAnchor="middle" fontSize="9" fill="#9ca3af">{fmtLabel(data[i].label,period)}</text> : null)}
         </g>
       ) : (
         <g>
           {vals.map((v,i) => {
             const x=pL+(i/vals.length)*cW+cW/vals.length/2, bH=Math.max((v/max)*cH,0), y=pT+cH-bH;
+            const isProj = i===lastIdx && hasProjection;
             return (
               <g key={i}>
-                <rect x={x-bW/2} y={y} width={bW} height={bH} rx="3" fill={metric.color} opacity="0.85"/>
+                <rect x={x-bW/2} y={y} width={bW} height={bH} rx="3"
+                  fill={isProj?"#3b82f6":metric.color}
+                  opacity={isProj?1:0.85}
+                  strokeDasharray={isProj?"4,2":"none"}
+                />
+                {isProj && (
+                  <g>
+                    <rect x={x-28} y={y-20} width={56} height={16} rx="4" fill="#3b82f6"/>
+                    <text x={x} y={y-9} textAnchor="middle" fontSize="9" fill="#fff" fontWeight="700">{"▲ "+fmtY(v)}</text>
+                  </g>
+                )}
                 {i%step===0 && <text x={x} y={H-4} textAnchor="middle" fontSize="9" fill="#9ca3af">{fmtLabel(data[i].label,period)}</text>}
               </g>
             );
@@ -451,7 +506,7 @@ export default function Dashboard() {
             <div style={{...CS, marginBottom:12}}>
               <div style={{fontSize:13,fontWeight:700,color:"#111827",marginBottom:2}}>{selMetric.label} — {periodLabel}</div>
               <div style={{fontSize:11,color:"#9ca3af",marginBottom:14}}>{market} · {chanCat}</div>
-              <TrendChart data={series} metricKey={trendKey} metric={selMetric} period={period} chartType={chartType}/>
+              <TrendChart data={series} metricKey={trendKey} metric={selMetric} period={period} chartType={chartType} pacing={pacing}/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
               {["Peak","Average","Latest","Projected"].map((lbl,li) => {
