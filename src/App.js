@@ -168,12 +168,15 @@ async function callAPI(messages) {
     body: JSON.stringify({ model: AI_MODEL, messages })
   });
 
+  const text = await response.text();
+  console.log("AI STATUS:", response.status);
+  console.log("AI RAW RESPONSE:", text);
+
   if (!response.ok) {
-    const text = await response.text();
     throw new Error(`AI request failed: ${response.status} ${text}`);
   }
 
-  return response.json();
+  return JSON.parse(text);
 }
 
 async function loadData() {
