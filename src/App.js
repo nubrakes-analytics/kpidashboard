@@ -70,9 +70,17 @@ function fmtLabel(label, period) {
 
 function mapRows(d) {
   return d.map(r => ({
-    date:r.date, Week:r.Week, Month:r.Month, market:r.market, channel:r.channel,
-    cat:r["Channel Category"], leads:r.leads||0, booked:r.jobs_booked||0,
-    canceled:r.canceled_jobs||0, completed:r.jobs_completed||0, revenue:r.invoiced_customer_price||0
+    date: r.Day || r.date,
+    Week: r.Week,
+    Month: r.Month,
+    market: r.market,
+    channel: r.channel || "",
+    cat: r["Channel Category"],
+    leads: r.leads||0,
+    booked: r.jobs_booked||0,
+    canceled: r.canceled_jobs||0,
+    completed: r.jobs_completed||0,
+    revenue: r.invoiced_customer_price||0
   }));
 }
 
@@ -92,8 +100,12 @@ function calcPacing(period) {
   return null;
 }
 
+const AI_ENDPOINT = typeof window !== "undefined" && window.location.hostname.includes("workers.dev")
+  ? "https://"+window.location.hostname+"/api/ai"
+  : "https://api.anthropic.com/v1/messages";
+
 function callAPI(messages) {
-  return fetch("https://api.anthropic.com/v1/messages", {
+  return fetch(AI_ENDPOINT, {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({ model: AI_MODEL, max_tokens: 1000, messages })
   }).then(r => r.json());
