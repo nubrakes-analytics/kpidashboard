@@ -111,9 +111,9 @@ function callAPI(messages) {
   }).then(r => r.json());
 }
 
-async function loadData() {
+aasync function loadData() {
   try {
-    const response = await fetch("./data.json");
+    const response = await fetch("/data.json");
 
     if (!response.ok) {
       throw new Error(`Failed to load data.json: ${response.status}`);
