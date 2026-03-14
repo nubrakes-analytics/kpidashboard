@@ -958,7 +958,7 @@ export default function Dashboard() {
             </div>
 
             <div style={{ marginTop: 8, fontSize: 11, color: "#9ca3af" }}>
-              Claude will analyze your filtered data to answer your question.
+              AI will analyze your filtered data to answer your question.
             </div>
           </div>
         )}
