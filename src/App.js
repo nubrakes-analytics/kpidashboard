@@ -575,6 +575,70 @@ export default function Dashboard() {
   const selMetric = METRICS.find(m => m.key === trendKey) || METRICS[0];
   const isRateOrAov = key => key.includes("Rate") || key === "aov";
 
+  function getFilteredRows(rows, market, chanCat) {
+  return rows.filter(r =>
+    (market === "All Markets" || r.market === market) &&
+    (chanCat === "All Channels" || r.cat === chanCat)
+  );
+}
+
+function aggregateSeriesByToggle(rows, period) {
+  const groups = {};
+
+  rows.forEach(r => {
+    const key =
+      period === "day"
+        ? (r.date || "").slice(0, 10)
+        : period === "week"
+        ? (r.Week || "").slice(0, 10)
+        : (r.Month || "").slice(0, 7);
+
+    if (!key) return;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  });
+
+  return Object.keys(groups)
+    .sort()
+    .map(key => {
+      const g = groups[key];
+      const leads = sumK(g, "leads");
+      const booked = sumK(g, "booked");
+      const canceled = sumK(g, "canceled");
+      const completed = sumK(g, "completed");
+      const revenue = sumK(g, "revenue");
+
+      return {
+        label: key,
+        leads,
+        booked,
+        canceled,
+        completed,
+        revenue,
+        bookingRate: leads ? booked / leads : 0,
+        cancelRate: booked ? canceled / booked : 0,
+        conversionRate: leads ? completed / leads : 0,
+        aov: completed ? revenue / completed : 0
+      };
+    });
+}  
+  function getScopedAggregates(rows, period, market, chanCat) {
+  const filteredRows = getFilteredRows(rows, market, chanCat);
+  const series = aggregateSeriesByToggle(filteredRows, period);
+  const overall = aggregate(filteredRows);
+
+  return {
+    rowCount: filteredRows.length,
+    market,
+    channel: chanCat,
+    period,
+    overall,
+    series
+  };
+}
+
+  
+  
   const fetchAI = useCallback((question) => {
   if (aiLoading) return;
   setAiLoading(true);
@@ -586,13 +650,23 @@ export default function Dashboard() {
 
   const rawSample = JSON.stringify(rawData.slice(0, 200));
 
-  const systemCtx =
-    `You are a business analyst for NuBrakes, a mobile brake repair service. ` +
-    `Use the full dataset, not the current dashboard filters. ` +
-    `Current dashboard view is Market: ${market}, Channel: ${chanCat}, Period: ${overviewLabel}, but your analysis must use all available data. ` +
-    `Full dataset summary: ${allDataSummary}. ` +
-    `Raw data sample (up to 200 rows): ${rawSample}.`;
+  const systemCtx = `
+You are a business analyst for NuBrakes.
 
+Use the aggregated dataset below as the source of truth.
+This data is already scoped by the current dashboard selections.
+
+Scope:
+- Period: ${period}
+- Market: ${market}
+- Channel: ${chanCat}
+
+Overall summary:
+${JSON.stringify(scopedAgg.overall)}
+
+Time series:
+${JSON.stringify(scopedAgg.series)}
+`;
   setChatHistory(h => [...h, { role: "user", text: question }]);
 
   callAPI([
@@ -895,7 +969,7 @@ export default function Dashboard() {
           <div style={{ ...baseCardStyle, padding: isPhone ? "12px" : "16px 18px 14px" }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>💬 Ask a Question</div>
             <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 16 }}>
-  Using full dataset across all markets and channels
+  AI is using the current dashboard scope: {period} · {market} · {chanCat}
 </div>
 
             {chatHistory.length > 0 && (
