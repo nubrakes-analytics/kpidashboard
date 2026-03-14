@@ -111,15 +111,37 @@ function callAPI(messages) {
   }).then(r => r.json());
 }
 
-function loadData() {
-  return fetch(DATA_URL)
-    .then(r => { if (!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
-    .then(d => {
-      if (!Array.isArray(d) || d.length === 0) throw new Error("Empty or invalid data");
-      // Log first row so we can verify structure
-      console.log("Data loaded:", d.length, "rows. First row:", JSON.stringify(d[0]));
-      return d;
-    });
+async function loadData() {
+  try {
+    const response = await fetch("./data.json");
+
+    if (!response.ok) {
+      throw new Error(`Failed to load data.json: ${response.status}`);
+    }
+
+    const text = await response.text();
+
+    console.log("STATUS:", response.status);
+    console.log("CONTENT-TYPE:", response.headers.get("content-type"));
+    console.log("RAW RESPONSE:", text.slice(0, 1000));
+
+    let d;
+    try {
+      d = JSON.parse(text);
+    } catch (e) {
+      throw new Error("Invalid JSON response");
+    }
+
+    if (!Array.isArray(d) || d.length === 0) {
+      throw new Error("Empty or invalid data");
+    }
+
+    console.log("Data loaded:", d.length, "rows. First row:", JSON.stringify(d[0]));
+    return d;
+  } catch (err) {
+    console.error("loadData error:", err);
+    throw err;
+  }
 }
 
 function Sparkline({ data, metricKey, color }) {
