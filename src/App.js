@@ -1694,5 +1694,3 @@ function Dashboard() {
     )
   );
 }
-
-ReactDOM.render(React.createElement(Dashboard), document.getElementById("dashboard-root"));
