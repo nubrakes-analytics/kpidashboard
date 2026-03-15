@@ -662,28 +662,59 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
   );
 }
 
-function FunnelChart({ curr, prev, period }) {
+function FunnelChart({ curr, prev, period, pacing }) {
   const steps = [
     { key: "leads", label: "Leads", color: "#6366f1" },
     { key: "booked", label: "Booked", color: "#0ea5e9" },
     { key: "completed", label: "Completed", color: "#10b981" }
   ];
 
-  const maxVal = Math.max(curr.leads || 1, 1);
+  const projectedCurr = {
+    leads: getProjectedMetricValue("leads", curr.leads || 0, pacing),
+    booked: getProjectedMetricValue("booked", curr.booked || 0, pacing),
+    completed: getProjectedMetricValue("completed", curr.completed || 0, pacing)
+  };
+
+  const maxVal = Math.max(projectedCurr.leads || 1, 1);
   const pl = period === "day" ? "day" : period === "week" ? "week" : "month";
 
   return React.createElement(
     "div",
-    { style: { background: "#fff", borderRadius: 12, padding: "16px 18px 20px", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", border: "1px solid #f1f5f9" } },
-    React.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 16 } }, "Conversion Funnel — Current " + pl),
+    {
+      style: {
+        background: "#fff",
+        borderRadius: 12,
+        padding: "16px 18px 20px",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        border: "1px solid #f1f5f9"
+      }
+    },
+    React.createElement(
+      "div",
+      {
+        style: {
+          fontSize: 11,
+          fontWeight: 600,
+          color: "#9ca3af",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          marginBottom: 16
+        }
+      },
+      "Conversion Funnel — Projected Current " + pl
+    ),
     React.createElement(
       "div",
       { style: { display: "flex", flexDirection: "column", gap: 6 } },
       steps.map((step, si) => {
-        const val = curr[step.key] || 0;
-        const pct = maxVal ? val / maxVal : 0;
+        const val = projectedCurr[step.key] || 0;
+        const pctWidth = maxVal ? val / maxVal : 0;
         const prevVal = prev[step.key] || 0;
-        const dropPct = si > 0 && (curr[steps[si - 1].key] || 0) > 0 ? ((val / (curr[steps[si - 1].key] || 1)) * 100).toFixed(1) : null;
+        const dropPct =
+          si > 0 && (projectedCurr[steps[si - 1].key] || 0) > 0
+            ? ((val / (projectedCurr[steps[si - 1].key] || 1)) * 100).toFixed(1)
+            : null;
+
         const change = prevVal ? ((val - prevVal) / prevVal) * 100 : 0;
         const good = change >= 0;
 
@@ -692,29 +723,91 @@ function FunnelChart({ curr, prev, period }) {
           { key: step.key },
           React.createElement(
             "div",
-            { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 } },
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 5
+              }
+            },
             React.createElement(
               "div",
               { style: { display: "flex", alignItems: "center", gap: 8 } },
-              React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", background: step.color, flexShrink: 0 } }),
-              React.createElement("span", { style: { fontSize: 13, fontWeight: 700, color: "#111827" } }, step.label),
-              dropPct !== null ? React.createElement("span", { style: { fontSize: 11, color: "#9ca3af", marginLeft: 2 } }, "(" + dropPct + "% of prev)") : null
+              React.createElement("div", {
+                style: {
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: step.color,
+                  flexShrink: 0
+                }
+              }),
+              React.createElement("span", {
+                style: { fontSize: 13, fontWeight: 700, color: "#111827" }
+              }, step.label),
+              dropPct !== null
+                ? React.createElement("span", {
+                    style: { fontSize: 11, color: "#9ca3af", marginLeft: 2 }
+                  }, "(" + dropPct + "% of prev)")
+                : null
             ),
             React.createElement(
               "div",
               { style: { display: "flex", alignItems: "center", gap: 8 } },
-              React.createElement("span", { style: { fontSize: 13, fontWeight: 700, color: "#111827" } }, Math.round(val).toLocaleString()),
+              React.createElement("span", {
+                style: { fontSize: 13, fontWeight: 700, color: "#111827" }
+              }, Math.round(val).toLocaleString()),
               prevVal > 0
-                ? React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: good ? "#10b981" : "#f43f5e", background: good ? "#ecfdf5" : "#fff1f2", padding: "1px 6px", borderRadius: 20, whiteSpace: "nowrap" } }, (good ? "▲" : "▼") + Math.abs(change).toFixed(1) + "%")
+                ? React.createElement("span", {
+                    style: {
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: good ? "#10b981" : "#f43f5e",
+                      background: good ? "#ecfdf5" : "#fff1f2",
+                      padding: "1px 6px",
+                      borderRadius: 20,
+                      whiteSpace: "nowrap"
+                    }
+                  }, (good ? "▲" : "▼") + Math.abs(change).toFixed(1) + "%")
                 : null
             )
           ),
           React.createElement(
             "div",
-            { style: { position: "relative", height: 10, background: "#f1f5f9", borderRadius: 6, overflow: "hidden" } },
-            React.createElement("div", { style: { position: "absolute", left: 0, top: 0, height: "100%", width: pct * 100 + "%", background: step.color, borderRadius: 6 } }),
+            {
+              style: {
+                position: "relative",
+                height: 10,
+                background: "#f1f5f9",
+                borderRadius: 6,
+                overflow: "hidden"
+              }
+            },
+            React.createElement("div", {
+              style: {
+                position: "absolute",
+                left: 0,
+                top: 0,
+                height: "100%",
+                width: pctWidth * 100 + "%",
+                background: step.color,
+                borderRadius: 6
+              }
+            }),
             prevVal > 0
-              ? React.createElement("div", { style: { position: "absolute", left: 0, top: 0, height: "100%", width: (maxVal ? prevVal / maxVal : 0) * 100 + "%", background: "none", borderRight: "2px dashed " + step.color, opacity: 0.4 } })
+              ? React.createElement("div", {
+                  style: {
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    height: "100%",
+                    width: ((maxVal ? prevVal / maxVal : 0) * 100) + "%",
+                    background: "none",
+                    borderRight: "2px dashed " + step.color,
+                    opacity: 0.4
+                  }
+                })
               : null
           )
         );
@@ -723,7 +816,7 @@ function FunnelChart({ curr, prev, period }) {
   );
 }
 
-function ComparisonChart({ curr, prev, period }) {
+function ComparisonChart({ curr, prev, period, pacing }) {
   const KPIs = [
     { key: "leads", label: "Leads", color: "#6366f1" },
     { key: "booked", label: "Bookings", color: "#0ea5e9" },
@@ -750,25 +843,75 @@ function ComparisonChart({ curr, prev, period }) {
 
   return React.createElement(
     "div",
-    { style: { background: "#fff", borderRadius: 12, padding: "16px 18px 20px", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", border: "1px solid #f1f5f9" } },
+    {
+      style: {
+        background: "#fff",
+        borderRadius: 12,
+        padding: "16px 18px 20px",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        border: "1px solid #f1f5f9"
+      }
+    },
     React.createElement(
       "div",
-      { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 } },
-      React.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" } }, "Current vs Prior Period — Core KPIs"),
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 14,
+          flexWrap: "wrap",
+          gap: 8
+        }
+      },
+      React.createElement(
+        "div",
+        {
+          style: {
+            fontSize: 11,
+            fontWeight: 600,
+            color: "#9ca3af",
+            textTransform: "uppercase",
+            letterSpacing: "0.05em"
+          }
+        },
+        "Projected Current vs Prior Period — Core KPIs"
+      ),
       React.createElement(
         "div",
         { style: { display: "flex", gap: 14, fontSize: 11 } },
         React.createElement(
           "span",
           { style: { display: "flex", alignItems: "center", gap: 5 } },
-          React.createElement("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#6366f1", display: "inline-block" } }),
-          React.createElement("span", { style: { color: "#6b7280", fontWeight: 600 } }, "Current " + pl)
+          React.createElement("span", {
+            style: {
+              width: 10,
+              height: 10,
+              borderRadius: 2,
+              background: "#6366f1",
+              display: "inline-block"
+            }
+          }),
+          React.createElement("span", {
+            style: { color: "#6b7280", fontWeight: 600 }
+          }, "Projected current " + pl)
         ),
         React.createElement(
           "span",
           { style: { display: "flex", alignItems: "center", gap: 5 } },
-          React.createElement("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#e5e7eb", border: "1.5px dashed #9ca3af", display: "inline-block" } }),
-          React.createElement("span", { style: { color: "#9ca3af", fontWeight: 600 } }, "Prior " + pl)
+          React.createElement("span", {
+            style: {
+              width: 10,
+              height: 10,
+              borderRadius: 2,
+              background: "#e5e7eb",
+              border: "1.5px dashed #9ca3af",
+              display: "inline-block"
+            }
+          }),
+          React.createElement("span", {
+            style: { color: "#9ca3af", fontWeight: 600 }
+          }, "Prior " + pl)
         )
       )
     ),
@@ -777,11 +920,22 @@ function ComparisonChart({ curr, prev, period }) {
       { viewBox: `0 0 ${W} ${H}`, style: { width: "100%", height: "auto" } },
       [0, 0.5, 1].map(t => {
         const y = pT + cH * (1 - t);
-        return React.createElement("g", { key: t }, React.createElement("line", { x1: pL, x2: W - pR, y1: y, y2: y, stroke: "#f1f5f9", strokeWidth: "1" }));
+        return React.createElement(
+          "g",
+          { key: t },
+          React.createElement("line", {
+            x1: pL,
+            x2: W - pR,
+            y1: y,
+            y2: y,
+            stroke: "#f1f5f9",
+            strokeWidth: "1"
+          })
+        );
       }),
       KPIs.map((kpi, i) => {
         const cx = xCenter(i);
-        const cVal = curr[kpi.key] || 0;
+        const cVal = getProjectedMetricValue(kpi.key, curr[kpi.key] || 0, pacing);
         const pVal = prev[kpi.key] || 0;
         const localMax = Math.max(cVal, pVal, 1);
         const cH2 = Math.max((cVal / localMax) * cH, 0);
@@ -794,11 +948,40 @@ function ComparisonChart({ curr, prev, period }) {
         return React.createElement(
           "g",
           { key: kpi.key },
-          React.createElement("rect", { x: cx - gap / 2 - bW, y: py, width: bW, height: pH2, rx: "3", fill: "#e5e7eb", opacity: 0.8 }),
-          React.createElement("rect", { x: cx + gap / 2, y: cy, width: bW, height: cH2, rx: "3", fill: kpi.color, opacity: 0.9 }),
-          React.createElement("text", { x: cx, y: H - 4, textAnchor: "middle", fontSize: "9", fill: "#9ca3af" }, kpi.label),
+          React.createElement("rect", {
+            x: cx - gap / 2 - bW,
+            y: py,
+            width: bW,
+            height: pH2,
+            rx: "3",
+            fill: "#e5e7eb",
+            opacity: 0.8
+          }),
+          React.createElement("rect", {
+            x: cx + gap / 2,
+            y: cy,
+            width: bW,
+            height: cH2,
+            rx: "3",
+            fill: kpi.color,
+            opacity: 0.9
+          }),
+          React.createElement("text", {
+            x: cx,
+            y: H - 4,
+            textAnchor: "middle",
+            fontSize: "9",
+            fill: "#9ca3af"
+          }, kpi.label),
           pVal > 0
-            ? React.createElement("text", { x: cx, y: Math.min(cy, py) - 5, textAnchor: "middle", fontSize: "8.5", fill: good ? "#10b981" : "#f43f5e", fontWeight: "700" }, (good ? "▲" : "▼") + Math.abs(change).toFixed(1) + "%")
+            ? React.createElement("text", {
+                x: cx,
+                y: Math.min(cy, py) - 5,
+                textAnchor: "middle",
+                fontSize: "8.5",
+                fill: good ? "#10b981" : "#f43f5e",
+                fontWeight: "700"
+              }, (good ? "▲" : "▼") + Math.abs(change).toFixed(1) + "%")
             : null
         );
       })
@@ -1488,8 +1671,8 @@ function Dashboard() {
             React.createElement(
               "div",
               { style: { display: "grid", gridTemplateColumns: isPhone ? "1fr" : isTablet ? "1fr" : "repeat(2,minmax(0,1fr))", gap: 16 } },
-              React.createElement(FunnelChart, { curr, prev, period }),
-              React.createElement(ComparisonChart, { curr, prev, period })
+              React.createElement(FunnelChart,{curr,prev,period,pacing}),
+              React.createElement(ComparisonChart,{curr,prev,period,pacing})
             )
           )
         : null,
