@@ -382,8 +382,30 @@ async function loadData() {
   throw new Error("all failed");
 }
 
-function Sparkline({ data, metricKey, color }) {
-  const vals = data.map(d => d[metricKey] || 0);
+function getProjectedMetricValue(metricKey, value, pacing) {
+  const isRateOrAov =
+    metricKey.includes("Rate") || metricKey === "aov";
+
+  if (!pacing || isRateOrAov) return value;
+  return value / pacing.pct;
+}
+
+function Sparkline({ data, metricKey, color, pacing }) {
+  const isRateOrAov =
+    metricKey.includes("Rate") || metricKey === "aov";
+
+  const vals = data.map((d, i) => {
+    const raw = d[metricKey] || 0;
+    if (
+      i === data.length - 1 &&
+      pacing &&
+      !isRateOrAov
+    ) {
+      return raw / pacing.pct;
+    }
+    return raw;
+  });
+
   if (vals.length < 2) return null;
 
   const min = Math.min(...vals);
@@ -391,6 +413,7 @@ function Sparkline({ data, metricKey, color }) {
   const range = max - min || 1;
   const w = 80;
   const h = 28;
+
   const pts = vals
     .map((v, i) => `${((i / (vals.length - 1)) * w).toFixed(1)},${(h - ((v - min) / range) * h).toFixed(1)}`)
     .join(" ");
@@ -1436,7 +1459,7 @@ function Dashboard() {
                     "div",
                     { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 8 } },
                     React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: good ? "#10b981" : "#f43f5e", background: good ? "#ecfdf5" : "#fff1f2", padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" } }, (good ? "▲" : "▼") + " " + Math.abs(change).toFixed(1) + "%"),
-                    React.createElement(Sparkline, { data: series, metricKey: m.key, color: m.color })
+                    React.createElement(Sparkline,{data:series,metricKey:m.key,color:m.color,pacing})
                   ),
                   projected
                     ? React.createElement(
