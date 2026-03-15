@@ -1,4 +1,5 @@
-const { useState, useEffect, useCallback, useMemo, useRef } = React;
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+
 
 const DATA_URL = "https://ai-data.jonathan-libiran.workers.dev/data-ai.json";
 const AI_MODEL = "gpt-4.1";
@@ -1696,11 +1697,4 @@ function Dashboard() {
 }
 
 
-const rootEl = document.getElementById("dashboard-root");
-
-if (!rootEl) {
-  console.error("dashboard-root element not found");
-} else {
-  const root = ReactDOM.createRoot(rootEl);
-  root.render(React.createElement(Dashboard));
-}
+export default Dashboard;
