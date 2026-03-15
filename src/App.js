@@ -1444,31 +1444,44 @@ function Dashboard() {
               "div",
               { style: { display: "grid", gridTemplateColumns: isPhone ? "1fr" : isTablet ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fill,minmax(190px,1fr))", gap: 12, marginBottom: 20 } },
               METRICS.map(m => {
-                const c = curr[m.key] || 0;
-                const p = prev[m.key] || 0;
-                const change = pct(c, p);
+                const actual = curr[m.key] || 0;
+                const projectedValue = getProjectedMetricValue(m.key, actual, pacing);
+                const prior = prev[m.key] || 0;
+
+                const displayValue =
+                pacing && !isRateOrAov(m.key) ? projectedValue : actual;
+
+                const change = pct(displayValue, prior);
                 const good = m.invert ? change <= 0 : change >= 0;
-                const projected = pacing && !isRateOrAov(m.key) ? c / pacing.pct : null;
 
                 return React.createElement(
                   "div",
                   { key: m.key, style: { ...baseCardStyle, padding: "14px 16px" } },
                   React.createElement("div", { style: { fontSize: 10, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 } }, m.label),
-                  React.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: "#111827", marginBottom: 8 } }, m.fmt(c)),
+                  React.createElement("div",{style:{fontSize:22,fontWeight:700,color:"#111827",marginBottom:8}},m.fmt(displayValue)),
                   React.createElement(
                     "div",
                     { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 8 } },
                     React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: good ? "#10b981" : "#f43f5e", background: good ? "#ecfdf5" : "#fff1f2", padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" } }, (good ? "▲" : "▼") + " " + Math.abs(change).toFixed(1) + "%"),
                     React.createElement(Sparkline,{data:series,metricKey:m.key,color:m.color,pacing})
                   ),
-                  projected
-                    ? React.createElement(
-                        "div",
-                        { style: { marginTop: 8, paddingTop: 8, borderTop: "1px dashed #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" } },
-                        React.createElement("span", { style: { fontSize: 10, color: "#9ca3af" } }, "Projected"),
-                        React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: "#3b82f6" } }, m.fmt(projected))
-                      )
-                    : null
+                  pacing && !isRateOrAov(m.key)
+  ? React.createElement(
+      "div",
+      {
+        style: {
+          marginTop: 8,
+          paddingTop: 8,
+          borderTop: "1px dashed #e5e7eb",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center"
+        }
+      },
+      React.createElement("span", { style: { fontSize: 10, color: "#9ca3af" } }, "Actual so far"),
+      React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: "#6b7280" } }, m.fmt(actual))
+    )
+  : null
                 );
               })
             ),
