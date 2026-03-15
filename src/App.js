@@ -706,13 +706,14 @@ function FunnelChart({ curr, prev, period, pacing }) {
     React.createElement(
       "div",
       { style: { display: "flex", flexDirection: "column", gap: 6 } },
-      steps.map((step, si) => {
+      steps.map(step => {
         const val = projectedCurr[step.key] || 0;
         const pctWidth = maxVal ? val / maxVal : 0;
         const prevVal = prev[step.key] || 0;
-        const dropPct =
-          si > 0 && (projectedCurr[steps[si - 1].key] || 0) > 0
-            ? ((val / (projectedCurr[steps[si - 1].key] || 1)) * 100).toFixed(1)
+
+        const pctOfLeads =
+          projectedCurr.leads > 0 && step.key !== "leads"
+            ? ((val / projectedCurr.leads) * 100).toFixed(1)
             : null;
 
         const change = prevVal ? ((val - prevVal) / prevVal) * 100 : 0;
@@ -746,10 +747,10 @@ function FunnelChart({ curr, prev, period, pacing }) {
               React.createElement("span", {
                 style: { fontSize: 13, fontWeight: 700, color: "#111827" }
               }, step.label),
-              dropPct !== null
+              pctOfLeads !== null
                 ? React.createElement("span", {
                     style: { fontSize: 11, color: "#9ca3af", marginLeft: 2 }
-                  }, "(" + dropPct + "% of prev)")
+                  }, "(" + pctOfLeads + "% of Leads)")
                 : null
             ),
             React.createElement(
