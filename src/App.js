@@ -1914,7 +1914,7 @@ function Dashboard() {
         React.createElement("line", { x1: "18", y1: "6", x2: "6", y2: "18" }),
         React.createElement("line", { x1: "6", y1: "6", x2: "18", y2: "18" })
       )
-    : React.createElement(
+        : React.createElement(
         "svg",
         {
           width: 22,
@@ -1930,7 +1930,7 @@ function Dashboard() {
         React.createElement("path", { d: "M19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9L19 16z" }),
         React.createElement("path", { d: "M5 14l.9 2.1L8 17l-2.1.9L5 20l-.9-2.1L2 17l2.1-.9L5 14z" })
       )
-);
+    );
 }
 
 
