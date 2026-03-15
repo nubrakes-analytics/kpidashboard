@@ -106,6 +106,12 @@ function getFilteredRows(rows, market, chanCat) {
   );
 }
 
+function getChicagoNow() {
+  return new Date(
+    new Date().toLocaleString("en-US", { timeZone: "America/Chicago" })
+  );
+}
+
 function buildTimeSeries(rows, period) {
   const groups = {};
 
@@ -349,7 +355,7 @@ function mapRows(d) {
 }
 
 function calcPacing(period) {
-  const now = new Date();
+  const now = getChicagoNow();
 
   if (period === "week") {
     const dow = now.getDay() === 0 ? 7 : now.getDay();
