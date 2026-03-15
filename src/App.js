@@ -283,7 +283,17 @@ function buildSeriesBreakdown(rows, period, groupKey) {
 function getScopedAggregates(rows, period, market, chanCat) {
   const filteredRows = getFilteredRows(rows, market, chanCat);
   const series = aggregateSeriesByToggle(filteredRows, period);
-  const overall = aggregate(filteredRows);
+  const latestLabel = series.length ? series[series.length - 1].label : null;
+
+const currentPeriodRows = latestLabel
+  ? filteredRows.filter(r => getPeriodKey(r, period) === latestLabel)
+  : [];
+
+const overall = aggregate(
+  (period === "week" || period === "month" || period === "day")
+    ? currentPeriodRows
+    : filteredRows
+);
 
   const result = {
     rowCount: filteredRows.length,
@@ -294,9 +304,29 @@ function getScopedAggregates(rows, period, market, chanCat) {
     series
   };
 
+  if (period === "week" || period === "month") {
+    const pacingByMetric = {};
+    METRICS.forEach(m => {
+      pacingByMetric[m.key] = calcHistoricalPacing(period, filteredRows, m.key);
+    });
+
+    result.overall = applyProjectionToAggregate(overall, pacingByMetric);
+    result.series = applyProjectionToSeries(series, pacingByMetric);
+  }
+
   if (market === "All Markets" && chanCat === "All Channels") {
-    result.seriesByMarket = buildSeriesBreakdown(filteredRows, period, "market");
-    result.seriesByChannel = buildSeriesBreakdown(filteredRows, period, "cat");
+    const rawSeriesByMarket = buildSeriesBreakdown(filteredRows, period, "market");
+    const rawSeriesByChannel = buildSeriesBreakdown(filteredRows, period, "cat");
+
+    result.seriesByMarket =
+      period === "week" || period === "month"
+        ? applyProjectionToBreakdownSeries(rawSeriesByMarket, period)
+        : rawSeriesByMarket;
+
+    result.seriesByChannel =
+      period === "week" || period === "month"
+        ? applyProjectionToBreakdownSeries(rawSeriesByChannel, period)
+        : rawSeriesByChannel;
   }
 
   return result;
@@ -486,6 +516,68 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue") {
     sampleSize: shares.length
   };
 }
+
+function applyProjectionToAggregate(agg, pacingByMetric) {
+  if (!agg) return agg;
+
+  const projected = { ...agg };
+
+  Object.keys(projected).forEach(key => {
+    projected[key] = getProjectedMetricValue(key, projected[key], pacingByMetric[key]);
+  });
+
+  return projected;
+}
+
+function applyProjectionToSeries(series, pacingByMetric) {
+  if (!Array.isArray(series) || !series.length) return series;
+
+  return series.map((point, idx) => {
+    if (idx !== series.length - 1) return point;
+
+    const projectedPoint = { ...point };
+
+    Object.keys(projectedPoint).forEach(key => {
+      if (key === "label") return;
+      projectedPoint[key] = getProjectedMetricValue(key, projectedPoint[key], pacingByMetric[key]);
+    });
+
+    return projectedPoint;
+  });
+}
+
+function applyProjectionToBreakdownSeries(seriesBreakdown, period) {
+  if (!Array.isArray(seriesBreakdown) || (period !== "week" && period !== "month")) {
+    return seriesBreakdown;
+  }
+
+  return seriesBreakdown.map(groupItem => {
+    const points = groupItem.points || [];
+    if (!points.length) return groupItem;
+
+    const mappedRows = points.map(p => ({
+      date: p.label,
+      Week: period === "week" ? p.label : "",
+      Month: period === "month" ? p.label : "",
+      leads: p.leads || 0,
+      booked: p.booked || 0,
+      canceled: p.canceled || 0,
+      completed: p.completed || 0,
+      revenue: p.revenue || 0
+    }));
+
+    const pacingByMetric = {};
+    METRICS.forEach(m => {
+      pacingByMetric[m.key] = calcHistoricalPacing(period, mappedRows, m.key);
+    });
+
+    return {
+      ...groupItem,
+      points: applyProjectionToSeries(points, pacingByMetric)
+    };
+  });
+}
+
 
 async function loadData() {
   for (const url of ["/data.json", DATA_URL]) {
