@@ -106,10 +106,15 @@ function getFilteredRows(rows, market, chanCat) {
   );
 }
 
-function getChicagoNow() {
-  return new Date(
-    new Date().toLocaleString("en-US", { timeZone: "America/Chicago" })
-  );
+function getMaxDataDate(rows) {
+  const dates = rows
+    .map(r => r.date || r.Day || r.Week || r.Month)
+    .filter(Boolean)
+    .map(d => new Date(d))
+    .filter(d => !isNaN(d.getTime()));
+
+  if (!dates.length) return new Date();
+  return new Date(Math.max(...dates.map(d => d.getTime())));
 }
 
 function buildTimeSeries(rows, period) {
@@ -355,7 +360,7 @@ function mapRows(d) {
 }
 
 function calcPacing(period) {
-  const now = getChicagoNow();
+   const now = getMaxDataDate(rows);
 
   if (period === "week") {
     const dow = now.getDay() === 0 ? 7 : now.getDay();
