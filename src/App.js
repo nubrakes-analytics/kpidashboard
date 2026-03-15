@@ -1040,6 +1040,7 @@ Formatting rules for chat:
 - Start with the answer immediately.
 - Use plain text only.
 - Use numbers only when supported by the data.
+- For Rates use percentage (%)
 
 Style rules:
 - Concise
