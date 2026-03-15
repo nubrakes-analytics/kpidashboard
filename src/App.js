@@ -92,7 +92,7 @@ function aggregate(rows) {
     completed,
     revenue,
     bookingRate: leads ? booked / leads : 0,
-    cancelRate: booked ? canceled / booked : 0,
+    cancelRate: (canceled + completed) ? canceled / (canceled + completed) : 0,
     conversionRate: leads ? completed / leads : 0,
     aov: completed ? revenue / completed : 0
   };
@@ -184,7 +184,7 @@ function buildTimeSeries(rows, period) {
       completed,
       revenue,
       bookingRate: leads ? booked / leads : 0,
-      cancelRate: booked ? canceled / booked : 0,
+      cancelRate: (canceled + completed) ? canceled / (canceled + completed) : 0,
       conversionRate: leads ? completed / leads : 0,
       aov: completed ? revenue / completed : 0
     };
@@ -224,7 +224,7 @@ function aggregateSeriesByToggle(rows, period) {
         completed,
         revenue,
         bookingRate: leads ? booked / leads : 0,
-        cancelRate: booked ? canceled / booked : 0,
+       cancelRate: (canceled + completed) ? canceled / (canceled + completed) : 0,
         conversionRate: leads ? completed / leads : 0,
         aov: completed ? revenue / completed : 0
       };
@@ -270,7 +270,7 @@ function buildSeriesBreakdown(rows, period, groupKey) {
             completed,
             revenue,
             bookingRate: leads ? booked / leads : 0,
-            cancelRate: booked ? canceled / booked : 0,
+            cancelRate: (canceled + completed) ? canceled / (canceled + completed) : 0,
             conversionRate: leads ? completed / leads : 0,
             aov: completed ? revenue / completed : 0
           };
