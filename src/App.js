@@ -1877,42 +1877,60 @@ function Dashboard() {
     ),
     React.createElement(ChatOverlay, { open: chatOpen, onClose: () => setChatOpen(false), rawData, period, market, chanCat }),
     React.createElement(
-      "button",
-      {
-        className: "chat-bubble-btn",
-        onClick: () => setChatOpen(o => !o),
-        style: {
-          position: "fixed",
-          bottom: 20,
-          right: 20,
-          width: 52,
-          height: 52,
-          borderRadius: "50%",
-          background: chatOpen ? "#374151" : "#111827",
-          border: "none",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.22)",
-          zIndex: 1001,
-          transition: "background 0.2s"
-        }
-      },
-      chatOpen
-        ? React.createElement(
-            "svg",
-            { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "#fff", strokeWidth: "2.5", strokeLinecap: "round" },
-            React.createElement("line", { x1: "18", y1: "6", x2: "6", y2: "18" }),
-            React.createElement("line", { x1: "6", y1: "6", x2: "18", y2: "18" })
-          )
-        : React.createElement(
-            "svg",
-            { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "#fff", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
-            React.createElement("path", { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" })
-          )
-    )
-  );
+  "button",
+  {
+    className: "chat-bubble-btn",
+    onClick: () => setChatOpen(o => !o),
+    style: {
+      position: "fixed",
+      bottom: 20,
+      right: 20,
+      width: 52,
+      height: 52,
+      borderRadius: "50%",
+      background: chatOpen ? "#374151" : "#111827",
+      border: "none",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      boxShadow: "0 4px 20px rgba(0,0,0,0.22)",
+      zIndex: 1001,
+      transition: "background 0.2s"
+    }
+  },
+  chatOpen
+    ? React.createElement(
+        "svg",
+        {
+          width: 18,
+          height: 18,
+          viewBox: "0 0 24 24",
+          fill: "none",
+          stroke: "#fff",
+          strokeWidth: "2.5",
+          strokeLinecap: "round"
+        },
+        React.createElement("line", { x1: "18", y1: "6", x2: "6", y2: "18" }),
+        React.createElement("line", { x1: "6", y1: "6", x2: "18", y2: "18" })
+      )
+    : React.createElement(
+        "svg",
+        {
+          width: 22,
+          height: 22,
+          viewBox: "0 0 24 24",
+          fill: "none",
+          stroke: "#fff",
+          strokeWidth: "2",
+          strokeLinecap: "round",
+          strokeLinejoin: "round"
+        },
+        React.createElement("path", { d: "M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z" }),
+        React.createElement("path", { d: "M19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9L19 16z" }),
+        React.createElement("path", { d: "M5 14l.9 2.1L8 17l-2.1.9L5 20l-.9-2.1L2 17l2.1-.9L5 14z" })
+      )
+);
 }
 
 
