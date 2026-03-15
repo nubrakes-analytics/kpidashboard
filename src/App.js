@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
-
 const DATA_URL = "https://ai-data.jonathan-libiran.workers.dev/data-ai.json";
 const AI_MODEL = "gpt-4.1";
 const AI_ENDPOINT = "/api/ai";
@@ -18,6 +17,7 @@ const METRICS = [
 ];
 
 const SHARE_INCOMPATIBLE = new Set(["bookingRate", "cancelRate", "conversionRate", "aov"]);
+const ADDITIVE_METRICS = new Set(["leads", "booked", "canceled", "completed", "revenue"]);
 
 const CAT_COLORS = {
   Core: "#6366f1",
@@ -108,13 +108,46 @@ function getFilteredRows(rows, market, chanCat) {
 
 function getMaxDataDate(rows) {
   const dates = rows
-    .map(r => r.date || r.Day || r.Week || r.Month)
+    .map(r => r.date || r.Week || r.Month)
     .filter(Boolean)
-    .map(d => new Date(d))
+    .map(v => new Date(v))
     .filter(d => !isNaN(d.getTime()));
 
   if (!dates.length) return new Date();
   return new Date(Math.max(...dates.map(d => d.getTime())));
+}
+
+function getPeriodKey(row, period) {
+  if (period === "week") return (row.Week || "").slice(0, 10);
+  if (period === "month") return (row.Month || "").slice(0, 7);
+  return (row.date || "").slice(0, 10);
+}
+
+function getPointInPeriod(row, period) {
+  const raw = row.date || row.Week || row.Month;
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return null;
+
+  if (period === "week") {
+    const dow = d.getDay();
+    return dow === 0 ? 7 : dow;
+  }
+
+  if (period === "month") {
+    return d.getDate();
+  }
+
+  return null;
+}
+
+function getPeriodLengthFromKey(periodKey, period) {
+  if (period === "week") return 7;
+  if (period === "month") {
+    const [y, m] = periodKey.split("-");
+    return new Date(Number(y), Number(m), 0).getDate();
+  }
+  return null;
 }
 
 function buildTimeSeries(rows, period) {
@@ -359,23 +392,99 @@ function mapRows(d) {
   }));
 }
 
-function calcPacing(period) {
-   const now = getMaxDataDate(rows);
+function calcHistoricalPacing(period, rows, metricKey = "revenue") {
+  if (!rows?.length) return null;
+  if (period !== "week" && period !== "month") return null;
+  if (!ADDITIVE_METRICS.has(metricKey)) return null;
 
-  if (period === "week") {
-    const dow = now.getDay() === 0 ? 7 : now.getDay();
-    if (dow === 7) return null;
-    return { elapsed: dow, total: 7, pct: dow / 7, label: "Day " + dow + " of 7" };
+  const currentPeriodKey = rows
+    .map(r => getPeriodKey(r, period))
+    .filter(Boolean)
+    .sort()
+    .slice(-1)[0];
+
+  if (!currentPeriodKey) return null;
+
+  const maxDate = getMaxDataDate(rows);
+  const currentPoint = period === "week"
+    ? (maxDate.getDay() === 0 ? 7 : maxDate.getDay())
+    : maxDate.getDate();
+
+  const grouped = {};
+  rows.forEach(r => {
+    const key = getPeriodKey(r, period);
+    if (!key) return;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(r);
+  });
+
+  const currentRows = grouped[currentPeriodKey] || [];
+  const currentActual = currentRows
+    .filter(r => {
+      const p = getPointInPeriod(r, period);
+      return p !== null && p <= currentPoint;
+    })
+    .reduce((sum, r) => sum + (Number(r[metricKey]) || 0), 0);
+
+  const historicalKeys = Object.keys(grouped)
+    .sort()
+    .filter(k => k !== currentPeriodKey);
+
+  const shares = historicalKeys
+    .map(key => {
+      const group = grouped[key];
+      const total = group.reduce((sum, r) => sum + (Number(r[metricKey]) || 0), 0);
+      if (!total) return null;
+
+      const periodLength = getPeriodLengthFromKey(key, period);
+      const maxPoint = Math.max(...group.map(r => getPointInPeriod(r, period) || 0));
+      const isComplete = maxPoint >= periodLength;
+      if (!isComplete) return null;
+
+      const cumulative = group
+        .filter(r => {
+          const p = getPointInPeriod(r, period);
+          return p !== null && p <= currentPoint;
+        })
+        .reduce((sum, r) => sum + (Number(r[metricKey]) || 0), 0);
+
+      const share = cumulative / total;
+      if (!share || share <= 0 || share > 1.25) return null;
+      return share;
+    })
+    .filter(Boolean);
+
+  const total = getPeriodLengthFromKey(currentPeriodKey, period);
+
+  if (!shares.length) {
+    const fallbackPct = period === "week" ? currentPoint / 7 : currentPoint / total;
+    return {
+      elapsed: currentPoint,
+      total,
+      pct: fallbackPct,
+      historicalPct: null,
+      label: "Day " + currentPoint + " of " + total,
+      projected: fallbackPct > 0 ? currentActual / fallbackPct : currentActual,
+      actual: currentActual,
+      method: "fallback",
+      sampleSize: 0
+    };
   }
 
-  if (period === "month") {
-    const dom = now.getDate();
-    const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    if (dom === dim) return null;
-    return { elapsed: dom, total: dim, pct: dom / dim, label: "Day " + dom + " of " + dim };
-  }
+  const historicalPct = shares.reduce((a, b) => a + b, 0) / shares.length;
+  const projected = historicalPct > 0 ? currentActual / historicalPct : currentActual;
 
-  return null;
+  return {
+    elapsed: currentPoint,
+    total,
+    pct: historicalPct,
+    historicalPct,
+    label: "Day " + currentPoint + " of " + total,
+    projected,
+    actual: currentActual,
+    method: "historical",
+    sampleSize: shares.length
+  };
 }
 
 async function loadData() {
@@ -394,25 +503,18 @@ async function loadData() {
 }
 
 function getProjectedMetricValue(metricKey, value, pacing) {
-  const isRateOrAov =
-    metricKey.includes("Rate") || metricKey === "aov";
-
+  const isRateOrAov = metricKey.includes("Rate") || metricKey === "aov";
   if (!pacing || isRateOrAov) return value;
-  return value / pacing.pct;
+  return pacing.projected ?? value;
 }
 
 function Sparkline({ data, metricKey, color, pacing }) {
-  const isRateOrAov =
-    metricKey.includes("Rate") || metricKey === "aov";
+  const isRateOrAov = metricKey.includes("Rate") || metricKey === "aov";
 
   const vals = data.map((d, i) => {
     const raw = d[metricKey] || 0;
-    if (
-      i === data.length - 1 &&
-      pacing &&
-      !isRateOrAov
-    ) {
-      return raw / pacing.pct;
+    if (i === data.length - 1 && pacing && !isRateOrAov) {
+      return pacing.projected ?? raw;
     }
     return raw;
   });
@@ -530,7 +632,7 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
   const vals = data.map((d, i) => {
     const raw = d[metricKey] || 0;
     if (i === data.length - 1 && pacing && !isRateOrAov && (period === "week" || period === "month")) {
-      return raw / pacing.pct;
+      return pacing.projected ?? raw;
     }
     return raw;
   });
@@ -673,7 +775,7 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
   );
 }
 
-function FunnelChart({ curr, prev, period, pacing }) {
+function FunnelChart({ curr, prev, period, pacingByMetric }) {
   const steps = [
     { key: "leads", label: "Leads", color: "#6366f1" },
     { key: "booked", label: "Booked", color: "#0ea5e9" },
@@ -681,9 +783,9 @@ function FunnelChart({ curr, prev, period, pacing }) {
   ];
 
   const projectedCurr = {
-    leads: getProjectedMetricValue("leads", curr.leads || 0, pacing),
-    booked: getProjectedMetricValue("booked", curr.booked || 0, pacing),
-    completed: getProjectedMetricValue("completed", curr.completed || 0, pacing)
+    leads: getProjectedMetricValue("leads", curr.leads || 0, pacingByMetric.leads),
+    booked: getProjectedMetricValue("booked", curr.booked || 0, pacingByMetric.booked),
+    completed: getProjectedMetricValue("completed", curr.completed || 0, pacingByMetric.completed)
   };
 
   const maxVal = Math.max(projectedCurr.leads || 1, 1);
@@ -828,7 +930,7 @@ function FunnelChart({ curr, prev, period, pacing }) {
   );
 }
 
-function ComparisonChart({ curr, prev, period, pacing }) {
+function ComparisonChart({ curr, prev, period, pacingByMetric }) {
   const KPIs = [
     { key: "leads", label: "Leads", color: "#6366f1" },
     { key: "booked", label: "Bookings", color: "#0ea5e9" },
@@ -947,7 +1049,7 @@ function ComparisonChart({ curr, prev, period, pacing }) {
       }),
       KPIs.map((kpi, i) => {
         const cx = xCenter(i);
-        const cVal = getProjectedMetricValue(kpi.key, curr[kpi.key] || 0, pacing);
+        const cVal = getProjectedMetricValue(kpi.key, curr[kpi.key] || 0, pacingByMetric[kpi.key]);
         const pVal = prev[kpi.key] || 0;
         const localMax = Math.max(cVal, pVal, 1);
         const cH2 = Math.max((cVal / localMax) * cH, 0);
@@ -1051,7 +1153,7 @@ Formatting rules for chat:
 - Start with the answer immediately.
 - Use plain text only.
 - Use numbers only when supported by the data.
-- For Rates use percentage (%)
+- For rates use percentage (%).
 
 Style rules:
 - Concise
@@ -1062,7 +1164,6 @@ Style rules:
 
 Answer template:
 <direct answer>
-
 - <supporting point>
 - <supporting point>
 - <supporting point>
@@ -1387,7 +1488,7 @@ function Dashboard() {
     if (SHARE_INCOMPATIBLE.has(trendKey) && trendView === "share") {
       setTrendView("absolute");
     }
-  }, [trendKey]);
+  }, [trendKey, trendView]);
 
   useEffect(() => {
     loadData()
@@ -1450,13 +1551,22 @@ function Dashboard() {
     return aggregate(getRowsForLabel(series[series.length - 2].label));
   }, [series, getRowsForLabel]);
 
-  const pacing = useMemo(() => calcPacing(period), [period]);
+  const pacingByMetric = useMemo(() => {
+    const result = {};
+    METRICS.forEach(m => {
+      result[m.key] = calcHistoricalPacing(period, filtered, m.key);
+    });
+    return result;
+  }, [period, filtered]);
+
+  const defaultPacing = pacingByMetric.revenue || null;
   const pct = (c, p) => (p ? ((c - p) / p) * 100 : 0);
   const periodLabel = period === "day" ? "Last 60 Days" : period === "week" ? "Last 12 Weeks" : "Last 12 Months";
   const isRateOrAov = key => key.includes("Rate") || key === "aov";
   const selMetric = METRICS.find(m => m.key === trendKey) || METRICS[0];
   const shareBlocked = SHARE_INCOMPATIBLE.has(trendKey);
   const activeChannels = channelShareData.channels.filter(c => channelShareData.series.some(d => (d[c] || 0) > 0));
+  const selectedMetricPacing = pacingByMetric[trendKey] || null;
 
   const overviewLabel = useMemo(() => {
     if (!series.length) return "";
@@ -1530,7 +1640,7 @@ function Dashboard() {
   };
 
   const pacingBanner =
-    pacing && (period === "week" || period === "month")
+    defaultPacing && (period === "week" || period === "month")
       ? React.createElement(
           "div",
           {
@@ -1550,13 +1660,13 @@ function Dashboard() {
           React.createElement(
             "div",
             null,
-            React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: "#1d4ed8" } }, (period === "week" ? "Week" : "Month") + " Pacing · " + pacing.label + " · " + (pacing.pct * 100).toFixed(0) + "% elapsed"),
-            React.createElement("span", { style: { fontSize: 11, color: "#3b82f6", marginLeft: 8 } }, "Projected values shown on each metric card")
+            React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: "#1d4ed8" } }, (period === "week" ? "Week" : "Month") + " Historical Pacing · " + defaultPacing.label + " · " + (defaultPacing.pct * 100).toFixed(0) + "% typical completion"),
+            React.createElement("span", { style: { fontSize: 11, color: "#3b82f6", marginLeft: 8 } }, defaultPacing.method === "historical" ? `Based on ${defaultPacing.sampleSize} completed prior periods` : "Fallback to elapsed-day pacing")
           ),
           React.createElement(
             "div",
             { style: { marginLeft: "auto", background: "#dbeafe", borderRadius: 20, padding: "2px 10px" } },
-            React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: "#1d4ed8" } }, (pacing.pct * 100).toFixed(0) + "%")
+            React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: "#1d4ed8" } }, (defaultPacing.pct * 100).toFixed(0) + "%")
           )
         )
       : null;
@@ -1657,12 +1767,10 @@ function Dashboard() {
               { style: { display: "grid", gridTemplateColumns: isPhone ? "1fr" : isTablet ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fill,minmax(190px,1fr))", gap: 12, marginBottom: 20 } },
               METRICS.map(m => {
                 const actual = curr[m.key] || 0;
+                const pacing = pacingByMetric[m.key] || null;
                 const projectedValue = getProjectedMetricValue(m.key, actual, pacing);
                 const prior = prev[m.key] || 0;
-
-                const displayValue =
-                pacing && !isRateOrAov(m.key) ? projectedValue : actual;
-
+                const displayValue = pacing && !isRateOrAov(m.key) ? projectedValue : actual;
                 const change = pct(displayValue, prior);
                 const good = m.invert ? change <= 0 : change >= 0;
 
@@ -1670,38 +1778,38 @@ function Dashboard() {
                   "div",
                   { key: m.key, style: { ...baseCardStyle, padding: "14px 16px" } },
                   React.createElement("div", { style: { fontSize: 10, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 } }, m.label),
-                  React.createElement("div",{style:{fontSize:22,fontWeight:700,color:"#111827",marginBottom:8}},m.fmt(displayValue)),
+                  React.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: "#111827", marginBottom: 8 } }, m.fmt(displayValue)),
                   React.createElement(
                     "div",
                     { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 8 } },
                     React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: good ? "#10b981" : "#f43f5e", background: good ? "#ecfdf5" : "#fff1f2", padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" } }, (good ? "▲" : "▼") + " " + Math.abs(change).toFixed(1) + "%"),
-                    React.createElement(Sparkline,{data:series,metricKey:m.key,color:m.color,pacing})
+                    React.createElement(Sparkline, { data: series, metricKey: m.key, color: m.color, pacing })
                   ),
                   pacing && !isRateOrAov(m.key)
-  ? React.createElement(
-      "div",
-      {
-        style: {
-          marginTop: 8,
-          paddingTop: 8,
-          borderTop: "1px dashed #e5e7eb",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center"
-        }
-      },
-      React.createElement("span", { style: { fontSize: 10, color: "#9ca3af" } }, "Actual so far"),
-      React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: "#6b7280" } }, m.fmt(actual))
-    )
-  : null
+                    ? React.createElement(
+                        "div",
+                        {
+                          style: {
+                            marginTop: 8,
+                            paddingTop: 8,
+                            borderTop: "1px dashed #e5e7eb",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                          }
+                        },
+                        React.createElement("span", { style: { fontSize: 10, color: "#9ca3af" } }, "Actual so far"),
+                        React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: "#6b7280" } }, m.fmt(actual))
+                      )
+                    : null
                 );
               })
             ),
             React.createElement(
               "div",
               { style: { display: "grid", gridTemplateColumns: isPhone ? "1fr" : isTablet ? "1fr" : "repeat(2,minmax(0,1fr))", gap: 16 } },
-              React.createElement(FunnelChart,{curr,prev,period,pacing}),
-              React.createElement(ComparisonChart,{curr,prev,period,pacing})
+              React.createElement(FunnelChart, { curr, prev, period, pacingByMetric }),
+              React.createElement(ComparisonChart, { curr, prev, period, pacingByMetric })
             )
           )
         : null,
@@ -1818,7 +1926,7 @@ function Dashboard() {
                     { style: { ...baseCardStyle, marginBottom: 12 } },
                     React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 2 } }, selMetric.label + " — " + periodLabel),
                     React.createElement("div", { style: { fontSize: 11, color: "#9ca3af", marginBottom: 14 } }, market + " · " + chanCat),
-                    React.createElement(TrendChart, { data: series, metricKey: trendKey, metric: selMetric, period, chartType, pacing })
+                    React.createElement(TrendChart, { data: series, metricKey: trendKey, metric: selMetric, period, chartType, pacing: selectedMetricPacing })
                   ),
                   React.createElement(
                     "div",
@@ -1832,14 +1940,14 @@ function Dashboard() {
                       else if (li === 1) v = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
                       else if (li === 2) v = latest2;
                       else {
-                        if (!pacing || (period !== "week" && period !== "month") || isRateOrAov(trendKey)) return null;
-                        v = latest2 / pacing.pct;
+                        if (!selectedMetricPacing || (period !== "week" && period !== "month") || isRateOrAov(trendKey)) return null;
+                        v = selectedMetricPacing.projected ?? latest2;
                       }
 
                       return React.createElement(
                         "div",
                         { key: lbl, style: { ...baseCardStyle, borderTop: li === 3 ? "2px solid #3b82f6" : "" } },
-                        React.createElement("div", { style: { fontSize: 10, color: li === 3 ? "#3b82f6" : "#9ca3af", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 } }, lbl + (li === 3 && pacing ? " (" + (pacing.pct * 100).toFixed(0) + "%)" : "")),
+                        React.createElement("div", { style: { fontSize: 10, color: li === 3 ? "#3b82f6" : "#9ca3af", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 } }, lbl + (li === 3 && selectedMetricPacing ? " (hist)" : "")),
                         React.createElement("div", { style: { fontSize: isPhone ? 18 : 20, fontWeight: 700, color: li === 3 ? "#3b82f6" : selMetric.color } }, v !== null ? selMetric.fmt(v) : "—")
                       );
                     })
@@ -1969,6 +2077,5 @@ function Dashboard() {
     )
   );
 }
-
 
 export default Dashboard;
