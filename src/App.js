@@ -1219,16 +1219,16 @@ function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
 
   setAiLoading(true);
 
-  const useFullDataset = shouldUseFullDataset(question);
-  const aiMarket = useFullDataset ? "All Markets" : market;
-  const aiChannel = useFullDataset ? "All Channels" : chanCat;
+  const aiMarket = "All Markets";
+  const aiChannel = "All Channels";
   const scopedAgg = getScopedAggregates(rawData, period, aiMarket, aiChannel);
+  const filteredAllRows = getFilteredRows(rawData, aiMarket, aiChannel);
 
   const pacingSummary =
     period === "week" || period === "month"
       ? Object.fromEntries(
           METRICS.map(m => {
-            const pacing = calcHistoricalPacing(period, getFilteredRows(rawData, aiMarket, aiChannel), m.key);
+            const pacing = calcHistoricalPacing(period, filteredAllRows, m.key);
             return [
               m.key,
               pacing
@@ -1252,7 +1252,8 @@ You are a business analyst for NuBrakes.
 Use the aggregated dataset below as the only source of truth.
 
 Context:
-- useFullDataset: ${useFullDataset}
+- market: All Markets
+- channel: All Channels
 - period: ${period}
 
 Formatting rules for chat:
@@ -1294,7 +1295,7 @@ ${JSON.stringify(scopedAgg.series)}
     { role: "system", content: systemCtx },
     {
       role: "user",
-      content: `Question: ${question}\n\nAnswer clearly and concisely using the scoped aggregated data.`
+      content: `Question: ${question}\n\nAnswer clearly and concisely using the aggregated data.`
     }
   ])
     .then(d => {
@@ -1313,7 +1314,7 @@ ${JSON.stringify(scopedAgg.series)}
       setChatHistory(h => [...h, { role: "assistant", text: `Error: ${err.message}` }]);
       setAiLoading(false);
     });
-}, [aiLoading, rawData, period, market, chanCat]);
+}, [aiLoading, rawData, period]);
 
   if (!open) return null;
 
