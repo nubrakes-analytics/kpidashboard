@@ -98,12 +98,8 @@ function aggregate(rows) {
   };
 }
 
-function getFilteredRows(rows, market, chanCat) {
-  return rows.filter(
-    r =>
-      (market === "All Markets" || r.market === market) &&
-      (chanCat === "All Channels" || r.cat === chanCat)
-  );
+function getFilteredRows(rows) {
+  return rows;
 }
 
 function getMaxDataDate(rows) {
@@ -184,7 +180,7 @@ function buildTimeSeries(rows, period) {
       completed,
       revenue,
       bookingRate: leads ? booked / leads : 0,
-      cancelRate: (canceled + completed) ? canceled / (canceled + completed) : 0,
+      cancelRate: canceled + completed ? canceled / (canceled + completed) : 0,
       conversionRate: leads ? completed / leads : 0,
       aov: completed ? revenue / completed : 0
     };
@@ -280,25 +276,23 @@ function buildSeriesBreakdown(rows, period, groupKey) {
     });
 }
 
-function getScopedAggregates(rows, period, market, chanCat) {
-  const filteredRows = getFilteredRows(rows, market, chanCat);
+function getScopedAggregates(rows, period) {
+  const filteredRows = rows;
   const series = aggregateSeriesByToggle(filteredRows, period);
   const latestLabel = series.length ? series[series.length - 1].label : null;
 
-const currentPeriodRows = latestLabel
-  ? filteredRows.filter(r => getPeriodKey(r, period) === latestLabel)
-  : [];
+  const currentPeriodRows = latestLabel
+    ? filteredRows.filter(r => getPeriodKey(r, period) === latestLabel)
+    : [];
 
-const overall = aggregate(
-  (period === "week" || period === "month" || period === "day")
-    ? currentPeriodRows
-    : filteredRows
-);
+  const overall = aggregate(
+    period === "week" || period === "month" || period === "day"
+      ? currentPeriodRows
+      : filteredRows
+  );
 
   const result = {
     rowCount: filteredRows.length,
-    market,
-    channel: chanCat,
     period,
     overall,
     series
@@ -314,20 +308,18 @@ const overall = aggregate(
     result.series = applyProjectionToSeries(series, pacingByMetric);
   }
 
-  if (market === "All Markets" && chanCat === "All Channels") {
-    const rawSeriesByMarket = buildSeriesBreakdown(filteredRows, period, "market");
-    const rawSeriesByChannel = buildSeriesBreakdown(filteredRows, period, "cat");
+  const rawSeriesByMarket = buildSeriesBreakdown(filteredRows, period, "market");
+  const rawSeriesByChannel = buildSeriesBreakdown(filteredRows, period, "cat");
 
-    result.seriesByMarket =
-      period === "week" || period === "month"
-        ? applyProjectionToBreakdownSeries(rawSeriesByMarket, period)
-        : rawSeriesByMarket;
+  result.seriesByMarket =
+    period === "week" || period === "month"
+      ? applyProjectionToBreakdownSeries(rawSeriesByMarket, period)
+      : rawSeriesByMarket;
 
-    result.seriesByChannel =
-      period === "week" || period === "month"
-        ? applyProjectionToBreakdownSeries(rawSeriesByChannel, period)
-        : rawSeriesByChannel;
-  }
+  result.seriesByChannel =
+    period === "week" || period === "month"
+      ? applyProjectionToBreakdownSeries(rawSeriesByChannel, period)
+      : rawSeriesByChannel;
 
   return result;
 }
