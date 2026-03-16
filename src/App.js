@@ -1223,6 +1223,7 @@ function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
     const aiMarket = useFullDataset ? "All Markets" : market;
     const aiChannel = useFullDataset ? "All Channels" : chanCat;
     const scopedAgg = getScopedAggregates(rawData, Period, "All Markets", "All Channels");
+    const aiPeriod = period === "month" ? "week" : period;
 
     const systemCtx = `
 You are a business analyst for NuBrakes.
@@ -1282,7 +1283,7 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
       { role: "system", content: systemCtx },
       {
         role: "user",
-        content: `Question: ${question}\n\nAnswer clearly and concisely using the full all-market, all-channel aggregated dataset for the ${Period} view only.`
+        content: `Question: ${question}\n\nAnswer clearly and concisely using the full all-market, all-channel aggregated dataset for the ${aiPeriod} view only.`
       }
     ])
       .then(d => {
