@@ -1219,16 +1219,24 @@ function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
 
   setAiLoading(true);
 
-  const aiMarket = "All Markets";
-  const aiChannel = "All Channels";
-  const scopedAgg = getScopedAggregates(rawData, period, aiMarket, aiChannel);
-  const filteredAllRows = getFilteredRows(rawData, aiMarket, aiChannel);
+  const aiRows = rawData; // ignore market + channel toggle filters
+  const overallSeries = aggregateSeriesByToggle(aiRows, period);
+
+  const seriesByMarket =
+    period === "week" || period === "month"
+      ? applyProjectionToBreakdownSeries(buildSeriesBreakdown(aiRows, period, "market"), period)
+      : buildSeriesBreakdown(aiRows, period, "market");
+
+  const seriesByChannel =
+    period === "week" || period === "month"
+      ? applyProjectionToBreakdownSeries(buildSeriesBreakdown(aiRows, period, "cat"), period)
+      : buildSeriesBreakdown(aiRows, period, "cat");
 
   const pacingSummary =
     period === "week" || period === "month"
       ? Object.fromEntries(
           METRICS.map(m => {
-            const pacing = calcHistoricalPacing(period, filteredAllRows, m.key);
+            const pacing = calcHistoricalPacing(period, aiRows, m.key);
             return [
               m.key,
               pacing
@@ -1246,15 +1254,25 @@ function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
         )
       : null;
 
+  const latestLabel = overallSeries.length
+    ? overallSeries[overallSeries.length - 1].label
+    : null;
+
+  const latestOverall = latestLabel
+    ? overallSeries.find(x => x.label === latestLabel)
+    : null;
+
   const systemCtx = `
 You are a business analyst for NuBrakes.
 
 Use the aggregated dataset below as the only source of truth.
 
 Context:
-- market: All Markets
-- channel: All Channels
+- market filter: ignored
+- channel filter: ignored
 - period: ${period}
+- data scope: all markets and all channels
+- breakdowns available: market and channel category
 
 Formatting rules for chat:
 - Maximum 6 lines unless the user asks for more detail.
@@ -1281,12 +1299,17 @@ Answer template:
 Pacing:
 ${JSON.stringify(pacingSummary)}
 
-Data:
-Overall summary:
-${JSON.stringify(scopedAgg.overall)}
+Latest overall period summary:
+${JSON.stringify(latestOverall)}
 
-Main time series:
-${JSON.stringify(scopedAgg.series)}
+Overall time series:
+${JSON.stringify(overallSeries)}
+
+Time series by market:
+${JSON.stringify(seriesByMarket)}
+
+Time series by channel:
+${JSON.stringify(seriesByChannel)}
 `;
 
   setChatHistory(h => [...h, { role: "user", text: question }]);
