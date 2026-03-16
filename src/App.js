@@ -315,19 +315,16 @@ const overall = aggregate(
   }
 
   if (market === "All Markets" && chanCat === "All Channels") {
-    const rawSeriesByMarket = buildSeriesBreakdown(filteredRows, period, "market");
-    const rawSeriesByChannel = buildSeriesBreakdown(filteredRows, period, "cat");
+  result.seriesByMarket =
+    period === "week" || period === "month"
+      ? applyProjectionToBreakdownSeriesFromRaw(filteredRows, period, "market")
+      : buildSeriesBreakdown(filteredRows, period, "market");
 
-    result.seriesByMarket =
-      period === "week" || period === "month"
-        ? applyProjectionToBreakdownSeries(rawSeriesByMarket, period)
-        : rawSeriesByMarket;
-
-    result.seriesByChannel =
-      period === "week" || period === "month"
-        ? applyProjectionToBreakdownSeries(rawSeriesByChannel, period)
-        : rawSeriesByChannel;
-  }
+  result.seriesByChannel =
+    period === "week" || period === "month"
+      ? applyProjectionToBreakdownSeriesFromRaw(filteredRows, period, "cat")
+      : buildSeriesBreakdown(filteredRows, period, "cat");
+}
 
   return result;
 }
@@ -546,34 +543,24 @@ function applyProjectionToSeries(series, pacingByMetric) {
   });
 }
 
-function applyProjectionToBreakdownSeries(seriesBreakdown, period) {
-  if (!Array.isArray(seriesBreakdown) || (period !== "week" && period !== "month")) {
-    return seriesBreakdown;
+function applyProjectionToBreakdownSeriesFromRaw(rows, period, groupKey) {
+  if (period !== "week" && period !== "month") {
+    return buildSeriesBreakdown(rows, period, groupKey);
   }
 
-  return seriesBreakdown.map(groupItem => {
-    const points = groupItem.points || [];
-    if (!points.length) return groupItem;
+  const baseSeries = buildSeriesBreakdown(rows, period, groupKey);
 
-    const mappedRows = points.map(p => ({
-      date: p.label,
-      Week: period === "week" ? p.label : "",
-      Month: period === "month" ? p.label : "",
-      leads: p.leads || 0,
-      booked: p.booked || 0,
-      canceled: p.canceled || 0,
-      completed: p.completed || 0,
-      revenue: p.revenue || 0
-    }));
+  return baseSeries.map(groupItem => {
+    const groupRows = rows.filter(r => (r[groupKey] || "Unknown") === groupItem.group);
 
     const pacingByMetric = {};
     METRICS.forEach(m => {
-      pacingByMetric[m.key] = calcHistoricalPacing(period, mappedRows, m.key);
+      pacingByMetric[m.key] = calcHistoricalPacing(period, groupRows, m.key);
     });
 
     return {
       ...groupItem,
-      points: applyProjectionToSeries(points, pacingByMetric)
+      points: applyProjectionToSeries(groupItem.points || [], pacingByMetric)
     };
   });
 }
