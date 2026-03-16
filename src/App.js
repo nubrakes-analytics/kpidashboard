@@ -1222,8 +1222,15 @@ function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
     const useFullDataset = shouldUseFullDataset(question);
     const aiMarket = useFullDataset ? "All Markets" : market;
     const aiChannel = useFullDataset ? "All Channels" : chanCat;
-    const scopedAgg = getScopedAggregates(rawData, Period, "All Markets", "All Channels");
-    const aiPeriod = period === "month" ? "week" : period;
+
+    const sendMessage = useCallback(async (question) => {
+  if (aiLoading || !question.trim()) return;
+
+  try {
+    setAiLoading(true);
+
+    const aiPeriod = period === "day" ? "month" : period;
+    const scopedAgg = getScopedAggregates(rawData, aiPeriod, "All Markets", "All Channels");
 
     const systemCtx = `
 You are a business analyst for NuBrakes.
@@ -1235,7 +1242,7 @@ Scope rules:
 - Ignore any dashboard market toggle.
 - Ignore any dashboard channel toggle.
 - Only use the selected time aggregation for context.
-- If the selected period is day, convert it to week for AI analysis.
+- If the selected period is day, use month for AI analysis.
 
 Scope:
 - Dataset: All Markets, All Channels
@@ -1276,6 +1283,34 @@ ${JSON.stringify(scopedAgg.series)}
 ${scopedAgg.seriesByMarket ? `Time series by market:\n${JSON.stringify(scopedAgg.seriesByMarket)}\n` : ""}
 ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedAgg.seriesByChannel)}\n` : ""}
 `;
+
+    setChatHistory(h => [...h, { role: "user", text: question }]);
+
+    const d = await callAPI([
+      { role: "system", content: systemCtx },
+      {
+        role: "user",
+        content: `Question: ${question}\n\nAnswer clearly and concisely using the full all-market, all-channel aggregated dataset for the ${aiPeriod} view only.`
+      }
+    ]);
+
+    const t =
+      d.output_text ||
+      (Array.isArray(d.output)
+        ? d.output
+            .flatMap(item => Array.isArray(item.content) ? item.content : [])
+            .map(c => c.text || "")
+            .join("")
+        : "");
+
+    setChatHistory(h => [...h, { role: "assistant", text: t || "No response." }]);
+  } catch (err) {
+    console.error("sendMessage error:", err);
+    setChatHistory(h => [...h, { role: "assistant", text: `Error: ${err.message}` }]);
+  } finally {
+    setAiLoading(false);
+  }
+}, [aiLoading, rawData, period]);
 
     setChatHistory(h => [...h, { role: "user", text: question }]);
 
