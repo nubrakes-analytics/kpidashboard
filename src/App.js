@@ -98,8 +98,12 @@ function aggregate(rows) {
   };
 }
 
-function getFilteredRows(rows) {
-  return rows;
+function getFilteredRows(rows, market, chanCat) {
+  return rows.filter(
+    r =>
+      (market === "All Markets" || r.market === market) &&
+      (chanCat === "All Channels" || r.cat === chanCat)
+  );
 }
 
 function getMaxDataDate(rows) {
@@ -180,7 +184,7 @@ function buildTimeSeries(rows, period) {
       completed,
       revenue,
       bookingRate: leads ? booked / leads : 0,
-      cancelRate: canceled + completed ? canceled / (canceled + completed) : 0,
+      cancelRate: (canceled + completed) ? canceled / (canceled + completed) : 0,
       conversionRate: leads ? completed / leads : 0,
       aov: completed ? revenue / completed : 0
     };
@@ -276,23 +280,25 @@ function buildSeriesBreakdown(rows, period, groupKey) {
     });
 }
 
-function getScopedAggregates(rows, period) {
-  const filteredRows = rows;
+function getScopedAggregates(rows, period, market, chanCat) {
+  const filteredRows = getFilteredRows(rows, market, chanCat);
   const series = aggregateSeriesByToggle(filteredRows, period);
   const latestLabel = series.length ? series[series.length - 1].label : null;
 
-  const currentPeriodRows = latestLabel
-    ? filteredRows.filter(r => getPeriodKey(r, period) === latestLabel)
-    : [];
+const currentPeriodRows = latestLabel
+  ? filteredRows.filter(r => getPeriodKey(r, period) === latestLabel)
+  : [];
 
-  const overall = aggregate(
-    period === "week" || period === "month" || period === "day"
-      ? currentPeriodRows
-      : filteredRows
-  );
+const overall = aggregate(
+  (period === "week" || period === "month" || period === "day")
+    ? currentPeriodRows
+    : filteredRows
+);
 
   const result = {
     rowCount: filteredRows.length,
+    market,
+    channel: chanCat,
     period,
     overall,
     series
@@ -308,18 +314,20 @@ function getScopedAggregates(rows, period) {
     result.series = applyProjectionToSeries(series, pacingByMetric);
   }
 
-  const rawSeriesByMarket = buildSeriesBreakdown(filteredRows, period, "market");
-  const rawSeriesByChannel = buildSeriesBreakdown(filteredRows, period, "cat");
+  if (market === "All Markets" && chanCat === "All Channels") {
+    const rawSeriesByMarket = buildSeriesBreakdown(filteredRows, period, "market");
+    const rawSeriesByChannel = buildSeriesBreakdown(filteredRows, period, "cat");
 
-  result.seriesByMarket =
-    period === "week" || period === "month"
-      ? applyProjectionToBreakdownSeries(rawSeriesByMarket, period)
-      : rawSeriesByMarket;
+    result.seriesByMarket =
+      period === "week" || period === "month"
+        ? applyProjectionToBreakdownSeries(rawSeriesByMarket, period)
+        : rawSeriesByMarket;
 
-  result.seriesByChannel =
-    period === "week" || period === "month"
-      ? applyProjectionToBreakdownSeries(rawSeriesByChannel, period)
-      : rawSeriesByChannel;
+    result.seriesByChannel =
+      period === "week" || period === "month"
+        ? applyProjectionToBreakdownSeries(rawSeriesByChannel, period)
+        : rawSeriesByChannel;
+  }
 
   return result;
 }
@@ -1214,20 +1222,23 @@ function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
     const useFullDataset = shouldUseFullDataset(question);
     const aiMarket = useFullDataset ? "All Markets" : market;
     const aiChannel = useFullDataset ? "All Channels" : chanCat;
-    const scopedAgg = getScopedAggregates(rawData, period, aiMarket, aiChannel);
+    const scopedAgg = getScopedAggregates(rawData, Period, "All Markets", "All Channels");
 
     const systemCtx = `
 You are a business analyst for NuBrakes.
 
 Use the aggregated dataset below as the only source of truth.
 
-Scope mode:
-- ${useFullDataset ? "Full dataset override triggered by user question" : "Current dashboard scope"}
+Scope rules:
+- Always use the full dataset.
+- Ignore any dashboard market toggle.
+- Ignore any dashboard channel toggle.
+- Only use the selected time aggregation for context.
+- If the selected period is day, convert it to week for AI analysis.
 
 Scope:
-- Period: ${period}
-- Market: ${aiMarket}
-- Channel: ${aiChannel}
+- Dataset: All Markets, All Channels
+- Period: ${aiPeriod}
 - Row count: ${scopedAgg.rowCount}
 
 Formatting rules for chat:
@@ -1238,6 +1249,7 @@ Formatting rules for chat:
 - Use plain text only.
 - Use numbers only when supported by the data.
 - For rates use percentage (%).
+- If the user asks about a specific market or channel, answer only if that breakdown is present in the provided data.
 
 Style rules:
 - Concise
@@ -1245,6 +1257,7 @@ Style rules:
 - Business-focused
 - No fluff
 - No invented facts
+- Do not assume filters outside the provided scope
 
 Answer template:
 <direct answer>
@@ -1269,7 +1282,7 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
       { role: "system", content: systemCtx },
       {
         role: "user",
-        content: `Question: ${question}\n\nAnswer clearly and concisely using the scoped aggregated data.`
+        content: `Question: ${question}\n\nAnswer clearly and concisely using the full all-market, all-channel aggregated dataset for the ${Period} view only.`
       }
     ])
       .then(d => {
