@@ -1215,39 +1215,45 @@ function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
   }, [chatHistory, aiLoading]);
 
   const sendMessage = useCallback((question) => {
-    if (aiLoading || !question.trim()) return;
-
-    setAiLoading(true);
-
-    const useFullDataset = shouldUseFullDataset(question);
-    const aiMarket = useFullDataset ? "All Markets" : market;
-    const aiChannel = useFullDataset ? "All Channels" : chanCat;
-
-    const sendMessage = useCallback(async (question) => {
   if (aiLoading || !question.trim()) return;
 
-  try {
-    setAiLoading(true);
+  setAiLoading(true);
 
-    const aiPeriod = period === "day" ? "month" : period;
-    const scopedAgg = getScopedAggregates(rawData, aiPeriod, "All Markets", "All Channels");
+  const useFullDataset = shouldUseFullDataset(question);
+  const aiMarket = useFullDataset ? "All Markets" : market;
+  const aiChannel = useFullDataset ? "All Channels" : chanCat;
+  const scopedAgg = getScopedAggregates(rawData, period, aiMarket, aiChannel);
 
-    const systemCtx = `
+  const pacingSummary =
+    period === "week" || period === "month"
+      ? Object.fromEntries(
+          METRICS.map(m => {
+            const pacing = calcHistoricalPacing(period, getFilteredRows(rawData, aiMarket, aiChannel), m.key);
+            return [
+              m.key,
+              pacing
+                ? {
+                    actual: pacing.actual,
+                    projected: pacing.projected,
+                    pct: pacing.pct,
+                    label: pacing.label,
+                    method: pacing.method,
+                    sampleSize: pacing.sampleSize
+                  }
+                : null
+            ];
+          })
+        )
+      : null;
+
+  const systemCtx = `
 You are a business analyst for NuBrakes.
 
 Use the aggregated dataset below as the only source of truth.
 
-Scope rules:
-- Always use the full dataset.
-- Ignore any dashboard market toggle.
-- Ignore any dashboard channel toggle.
-- Only use the selected time aggregation for context.
-- If the selected period is day, use month for AI analysis.
-
-Scope:
-- Dataset: All Markets, All Channels
-- Period: ${aiPeriod}
-- Row count: ${scopedAgg.rowCount}
+Context:
+- useFullDataset: ${useFullDataset}
+- period: ${period}
 
 Formatting rules for chat:
 - Maximum 6 lines unless the user asks for more detail.
@@ -1257,7 +1263,6 @@ Formatting rules for chat:
 - Use plain text only.
 - Use numbers only when supported by the data.
 - For rates use percentage (%).
-- If the user asks about a specific market or channel, answer only if that breakdown is present in the provided data.
 
 Style rules:
 - Concise
@@ -1265,7 +1270,6 @@ Style rules:
 - Business-focused
 - No fluff
 - No invented facts
-- Do not assume filters outside the provided scope
 
 Answer template:
 <direct answer>
@@ -1273,71 +1277,43 @@ Answer template:
 - <supporting point>
 - <supporting point>
 
+Pacing:
+${JSON.stringify(pacingSummary)}
+
 Data:
 Overall summary:
 ${JSON.stringify(scopedAgg.overall)}
 
 Main time series:
 ${JSON.stringify(scopedAgg.series)}
-
-${scopedAgg.seriesByMarket ? `Time series by market:\n${JSON.stringify(scopedAgg.seriesByMarket)}\n` : ""}
-${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedAgg.seriesByChannel)}\n` : ""}
 `;
 
-    setChatHistory(h => [...h, { role: "user", text: question }]);
+  setChatHistory(h => [...h, { role: "user", text: question }]);
 
-    const d = await callAPI([
-      { role: "system", content: systemCtx },
-      {
-        role: "user",
-        content: `Question: ${question}\n\nAnswer clearly and concisely using the full all-market, all-channel aggregated dataset for the ${aiPeriod} view only.`
-      }
-    ]);
+  callAPI([
+    { role: "system", content: systemCtx },
+    {
+      role: "user",
+      content: `Question: ${question}\n\nAnswer clearly and concisely using the scoped aggregated data.`
+    }
+  ])
+    .then(d => {
+      const t =
+        d.output_text ||
+        (d.output || [])
+          .flatMap(item => item.content || [])
+          .map(c => c.text || "")
+          .join("");
 
-    const t =
-      d.output_text ||
-      (Array.isArray(d.output)
-        ? d.output
-            .flatMap(item => Array.isArray(item.content) ? item.content : [])
-            .map(c => c.text || "")
-            .join("")
-        : "");
-
-    setChatHistory(h => [...h, { role: "assistant", text: t || "No response." }]);
-  } catch (err) {
-    console.error("sendMessage error:", err);
-    setChatHistory(h => [...h, { role: "assistant", text: `Error: ${err.message}` }]);
-  } finally {
-    setAiLoading(false);
-  }
-}, [aiLoading, rawData, period]);
-
-    setChatHistory(h => [...h, { role: "user", text: question }]);
-
-    callAPI([
-      { role: "system", content: systemCtx },
-      {
-        role: "user",
-        content: `Question: ${question}\n\nAnswer clearly and concisely using the full all-market, all-channel aggregated dataset for the ${aiPeriod} view only.`
-      }
-    ])
-      .then(d => {
-        const t =
-          d.output_text ||
-          (d.output || [])
-            .flatMap(item => item.content || [])
-            .map(c => c.text || "")
-            .join("");
-
-        setChatHistory(h => [...h, { role: "assistant", text: t || "No response." }]);
-        setAiLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setChatHistory(h => [...h, { role: "assistant", text: `Error: ${err.message}` }]);
-        setAiLoading(false);
-      });
-  }, [aiLoading, rawData, period, market, chanCat]);
+      setChatHistory(h => [...h, { role: "assistant", text: t || "No response." }]);
+      setAiLoading(false);
+    })
+    .catch(err => {
+      console.error(err);
+      setChatHistory(h => [...h, { role: "assistant", text: `Error: ${err.message}` }]);
+      setAiLoading(false);
+    });
+}, [aiLoading, rawData, period, market, chanCat]);
 
   if (!open) return null;
 
