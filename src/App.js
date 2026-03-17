@@ -1207,8 +1207,8 @@ function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
     setAiLoading(true);
 
     const useFullDataset = shouldUseFullDataset(question);
-    const aiMarket = useFullDataset ? "All Markets" : market;
-    const aiChannel = useFullDataset ? "All Channels" : chanCat;
+    const aiMarket = useFullDataset ? "All Markets" : "All Markets";
+    const aiChannel = useFullDataset ? "All Channels" : "All Markets";
     const scopedAgg = getScopedAggregates(rawData, period, aiMarket, aiChannel);
 
     const systemCtx = `
@@ -1217,7 +1217,7 @@ You are a business analyst for NuBrakes.
 Use the aggregated dataset below as the only source of truth.
 
 Scope mode:
-- ${useFullDataset ? "Full dataset override triggered by user question" : "Current dashboard scope"}
+- "Full dataset override triggered by user question"}
 
 Scope:
 - Period: ${period}
