@@ -168,6 +168,46 @@ function getMetricValue(obj, metric) {
   return 0;
 }
 
+function buildProjectedActualByChannel(rows, period = "month") {
+  const out = {};
+
+  VS_TARGET_CHANNELS.forEach(ch => {
+    const chRows = rows.filter(r => r.cat === ch);
+    const agg = aggregate(chRows);
+
+    const pacingByMetric = {
+      leads: calcHistoricalPacing(period, chRows, "leads"),
+      completed: calcHistoricalPacing(period, chRows, "completed"),
+      revenue: calcHistoricalPacing(period, chRows, "revenue")
+    };
+
+    out[ch] = {
+      ...agg,
+      leads: getProjectedMetricValue("leads", agg.leads, pacingByMetric.leads),
+      completed: getProjectedMetricValue("completed", agg.completed, pacingByMetric.completed),
+      revenue: getProjectedMetricValue("revenue", agg.revenue, pacingByMetric.revenue),
+      aov: agg.aov
+    };
+  });
+
+  const totalAgg = aggregate(rows);
+  const totalPacing = {
+    leads: calcHistoricalPacing(period, rows, "leads"),
+    completed: calcHistoricalPacing(period, rows, "completed"),
+    revenue: calcHistoricalPacing(period, rows, "revenue")
+  };
+
+  out.Total = {
+    ...totalAgg,
+    leads: getProjectedMetricValue("leads", totalAgg.leads, totalPacing.leads),
+    completed: getProjectedMetricValue("completed", totalAgg.completed, totalPacing.completed),
+    revenue: getProjectedMetricValue("revenue", totalAgg.revenue, totalPacing.revenue),
+    aov: totalAgg.aov
+  };
+
+  return out;
+}
+
 //API CALL
 
 async function callAPI(messages) {
@@ -1704,7 +1744,7 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
 
   const monthKey = getLatestMonthKey(filtered.length ? filtered : rawData);
   const monthRows = getMonthRows(filtered.length ? filtered : rawData, monthKey);
-  const actualByChannel = buildActualByChannel(monthRows);
+  const actualByChannel = buildProjectedActualByChannel(filtered.length ? filtered : rawData, "month");
   const targetMap = buildMetricTargetMap(targetRows, monthKey);
 
   const monthLabel =
@@ -2157,7 +2197,7 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
         "div",
         null,
         h("h1", { style: { fontSize: 20, fontWeight: 500, margin: 0, color: "#111827" } }, "Performance overview"),
-        h("p", { style: { fontSize: 12, color: "#6b7280", margin: "2px 0 0" } }, monthLabel + " — month to date pacing vs target")
+        h("p", { style: { fontSize: 12, color: "#6b7280", margin: "2px 0 0" } }, monthLabel + " — historical pacing projection vs target")
       ),
       h(
         "span",
