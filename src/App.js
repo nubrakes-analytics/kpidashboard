@@ -40,6 +40,136 @@ const FALLBACK = [
   { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Tampa", "Channel Category": "Core", leads: 17, jobs_booked: 5, canceled_jobs: 2, invoiced_customer_price: 1987, jobs_completed: 4 }
 ];
 
+//vs TARGET TAB
+const TARGET_DATA = [
+  { month_start: "2026-08-01", month_label: "Aug-26 F", metric: "aov", segment: "core", value: 495 },
+  { month_start: "2026-08-01", month_label: "Aug-26 F", metric: "aov", segment: "gbl", value: 477 },
+  { month_start: "2026-08-01", month_label: "Aug-26 F", metric: "aov", segment: "brand", value: 478 },
+  { month_start: "2026-08-01", month_label: "Aug-26 F", metric: "aov", segment: "referral", value: 473 },
+  { month_start: "2026-08-01", month_label: "Aug-26 F", metric: "aov", segment: "fleet", value: 552 },
+  { month_start: "2026-08-01", month_label: "Aug-26 F", metric: "aov", segment: "total", value: 494 },
+
+  { month_start: "2026-09-01", month_label: "Sep-26 F", metric: "aov", segment: "core", value: 496 },
+  { month_start: "2026-09-01", month_label: "Sep-26 F", metric: "aov", segment: "gbl", value: 477 },
+  { month_start: "2026-09-01", month_label: "Sep-26 F", metric: "aov", segment: "brand", value: 481 },
+  { month_start: "2026-09-01", month_label: "Sep-26 F", metric: "aov", segment: "referral", value: 473 },
+  { month_start: "2026-09-01", month_label: "Sep-26 F", metric: "aov", segment: "fleet", value: 548 },
+  { month_start: "2026-09-01", month_label: "Sep-26 F", metric: "aov", segment: "total", value: 493 }
+
+  // add the rest of your target rows here:
+  // revenue, leads, completed, aov
+  // segments: core, gbl, brand, referral, fleet, total
+];
+
+const VS_TARGET_CHANNELS = ["Core", "GBL", "Brand", "Referral", "Fleet"];
+const SEGMENT_TO_CAT = {
+  core: "Core",
+  gbl: "GBL",
+  brand: "Brand",
+  referral: "Referral",
+  fleet: "Fleet",
+  total: "Total"
+};
+const CAT_TO_SEGMENT = {
+  Core: "core",
+  GBL: "gbl",
+  Brand: "brand",
+  Referral: "referral",
+  Fleet: "fleet",
+  Total: "total"
+};
+
+function fmtMoneyCompact(v) {
+  const n = Number(v) || 0;
+  if (Math.abs(n) >= 1000000) return "$" + (n / 1000000).toFixed(2).replace(/\.00$/, "") + "M";
+  if (Math.abs(n) >= 1000) return "$" + Math.round(n / 1000) + "K";
+  return "$" + Math.round(n).toLocaleString();
+}
+
+function fmtMoney(v) {
+  return "$" + Math.round(Number(v) || 0).toLocaleString();
+}
+
+function fmtNum(v) {
+  return Math.round(Number(v) || 0).toLocaleString();
+}
+
+function pctToTarget(actual, target) {
+  if (!target) return null;
+  return Math.round((actual / target) * 100);
+}
+
+function deltaFmt(delta, prefix = "") {
+  const n = Math.round(Number(delta) || 0);
+  return (n >= 0 ? "+" : "-") + prefix + Math.abs(n).toLocaleString();
+}
+
+function barColor(pct) {
+  if (pct === null || pct === undefined) return "#94a3b8";
+  if (pct >= 100) return "#1d9e75";
+  if (pct >= 75) return "#ba7517";
+  return "#a32d2d";
+}
+
+function pillStyle(delta) {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "2px 7px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 600,
+    background: delta >= 0 ? "#eaf3de" : "#fcebeb",
+    color: delta >= 0 ? "#27500a" : "#791f1f",
+    whiteSpace: "nowrap"
+  };
+}
+
+function getLatestMonthKey(rows) {
+  const keys = rows
+    .map(r => (r.Month || "").slice(0, 7))
+    .filter(Boolean)
+    .sort();
+  return keys.length ? keys[keys.length - 1] : "";
+}
+
+function getMonthRows(rows, monthKey) {
+  return rows.filter(r => (r.Month || "").slice(0, 7) === monthKey);
+}
+
+function buildMetricTargetMap(targetRows, monthKey) {
+  const scoped = targetRows.filter(r => (r.month_start || "").slice(0, 7) === monthKey);
+  const out = {};
+  scoped.forEach(r => {
+    const metric = (r.metric || "").toLowerCase();
+    const segment = (r.segment || "").toLowerCase();
+    if (!out[metric]) out[metric] = {};
+    out[metric][segment] = Number(r.value) || 0;
+  });
+  return out;
+}
+
+function buildActualByChannel(rows) {
+  const out = {};
+  VS_TARGET_CHANNELS.forEach(ch => {
+    const agg = aggregate(rows.filter(r => r.cat === ch));
+    out[ch] = agg;
+  });
+  out.Total = aggregate(rows);
+  return out;
+}
+
+function getMetricValue(obj, metric) {
+  if (!obj) return 0;
+  if (metric === "revenue") return obj.revenue || 0;
+  if (metric === "leads") return obj.leads || 0;
+  if (metric === "completed") return obj.completed || 0;
+  if (metric === "aov") return obj.aov || 0;
+  return 0;
+}
+
+//API CALL
+
 async function callAPI(messages) {
   const response = await fetch(AI_ENDPOINT, {
     method: "POST",
@@ -1540,6 +1670,629 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
   );
 }
 
+
+function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
+  const h = React.createElement;
+
+  const monthKey = getLatestMonthKey(filtered.length ? filtered : rawData);
+  const monthRows = getMonthRows(filtered.length ? filtered : rawData, monthKey);
+  const actualByChannel = buildActualByChannel(monthRows);
+  const targetMap = buildMetricTargetMap(targetRows, monthKey);
+
+  const monthLabel =
+    monthKey
+      ? new Date(monthKey + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })
+      : "Current Month";
+
+  const topMetrics = [
+    { key: "revenue", label: "Total revenue", formatter: fmtMoneyCompact, prefix: "$" },
+    { key: "leads", label: "Total leads", formatter: fmtNum, prefix: "" },
+    { key: "completed", label: "Completed jobs", formatter: fmtNum, prefix: "" },
+    { key: "aov", label: "Avg order value", formatter: fmtMoney, prefix: "$" }
+  ];
+
+  const overallActual = actualByChannel.Total || {};
+  const revenueActual = getMetricValue(overallActual, "revenue");
+  const revenueTarget = targetMap.revenue?.total || 0;
+  const revenuePct = pctToTarget(revenueActual, revenueTarget);
+
+  const rowCardStyle = {
+    background: "#fff",
+    border: "0.5px solid #e5e7eb",
+    borderRadius: 16,
+    padding: "18px 20px"
+  };
+
+  const kpiGridCols = isPhone ? "1fr" : isTablet ? "repeat(2,minmax(0,1fr))" : "repeat(4,minmax(0,1fr))";
+  const row2Cols = isPhone ? "1fr" : "minmax(0,1.6fr) minmax(0,1fr)";
+  const row3Cols = isPhone ? "1fr" : "repeat(2,minmax(0,1fr))";
+  const row4Cols = isPhone ? "1fr" : "repeat(2,minmax(0,1fr))";
+
+  function renderKpi(metric) {
+    const actual = getMetricValue(overallActual, metric.key);
+    const target = targetMap[metric.key]?.total || 0;
+    const delta = actual - target;
+    return h(
+      "div",
+      {
+        key: metric.key,
+        style: {
+          background: "#f8fafc",
+          borderRadius: 12,
+          padding: "16px"
+        }
+      },
+      h("div", {
+        style: {
+          fontSize: 11,
+          color: "#6b7280",
+          marginBottom: 6,
+          textTransform: "uppercase",
+          letterSpacing: ".04em"
+        }
+      }, metric.label),
+      h("div", {
+        style: {
+          fontSize: 26,
+          fontWeight: 600,
+          lineHeight: 1,
+          marginBottom: 6,
+          color: "#111827"
+        }
+      }, metric.formatter(actual)),
+      h(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 11
+          }
+        },
+        h("span", { style: pillStyle(delta) }, deltaFmt(delta, metric.key === "revenue" || metric.key === "aov" ? "$" : "")),
+        h("span", { style: { color: "#9ca3af" } }, "vs " + metric.formatter(target) + " target")
+      )
+    );
+  }
+
+  function renderRevenueBars() {
+    const maxVal = Math.max(
+      ...VS_TARGET_CHANNELS.flatMap(ch => [
+        getMetricValue(actualByChannel[ch], "revenue"),
+        targetMap.revenue?.[CAT_TO_SEGMENT[ch]] || 0
+      ]),
+      1
+    );
+
+    return h(
+      "div",
+      null,
+      VS_TARGET_CHANNELS.map(ch => {
+        const actual = getMetricValue(actualByChannel[ch], "revenue");
+        const target = targetMap.revenue?.[CAT_TO_SEGMENT[ch]] || 0;
+        const actualW = (actual / maxVal) * 100;
+        const targetW = (target / maxVal) * 100;
+
+        return h(
+          "div",
+          { key: ch, style: { marginBottom: 14 } },
+          h(
+            "div",
+            {
+              style: {
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 5
+              }
+            },
+            h("span", { style: { fontSize: 12, color: "#111827" } }, ch),
+            h("span", { style: { fontSize: 11, color: "#6b7280" } }, fmtMoneyCompact(actual) + " / " + fmtMoneyCompact(target))
+          ),
+          h(
+            "div",
+            {
+              style: {
+                position: "relative",
+                height: 18,
+                background: "#f1f5f9",
+                borderRadius: 8,
+                overflow: "hidden"
+              }
+            },
+            h("div", {
+              style: {
+                position: "absolute",
+                left: 0,
+                top: 3,
+                height: 5,
+                width: targetW + "%",
+                background: "#d3d1c7",
+                borderRadius: 4
+              }
+            }),
+            h("div", {
+              style: {
+                position: "absolute",
+                left: 0,
+                bottom: 3,
+                height: 7,
+                width: actualW + "%",
+                background: "#378add",
+                borderRadius: 4
+              }
+            })
+          )
+        );
+      })
+    );
+  }
+
+  function renderRevenuePct() {
+    return h(
+      "div",
+      null,
+      VS_TARGET_CHANNELS.map(ch => {
+        const actual = getMetricValue(actualByChannel[ch], "revenue");
+        const target = targetMap.revenue?.[CAT_TO_SEGMENT[ch]] || 0;
+        const pct = pctToTarget(actual, target);
+        const fill = Math.min(pct || 0, 100);
+        const delta = actual - target;
+
+        return h(
+          "div",
+          {
+            key: ch,
+            style: {
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 12
+            }
+          },
+          h("span", { style: { fontSize: 12, width: 60, flexShrink: 0, color: "#6b7280" } }, ch),
+          h(
+            "div",
+            {
+              style: {
+                flex: 1,
+                height: 8,
+                background: "#f1f5f9",
+                borderRadius: 4,
+                overflow: "hidden"
+              }
+            },
+            h("div", {
+              style: {
+                height: "100%",
+                width: fill + "%",
+                background: barColor(pct),
+                borderRadius: 4
+              }
+            })
+          ),
+          h("span", {
+            style: {
+              fontSize: 12,
+              fontWeight: 600,
+              minWidth: 42,
+              textAlign: "right",
+              color: barColor(pct)
+            }
+          }, pct !== null ? pct + "%" : "—"),
+          h("span", { style: { minWidth: 72, textAlign: "right" } }, h("span", { style: pillStyle(delta) }, deltaFmt(delta, "$")))
+        );
+      })
+    );
+  }
+
+  function renderTable(metricKey, title) {
+    const rows = [...VS_TARGET_CHANNELS, "Total"].map(ch => {
+      const segment = CAT_TO_SEGMENT[ch];
+      const actual = getMetricValue(actualByChannel[ch], metricKey);
+      const target = targetMap[metricKey]?.[segment] || 0;
+      const pct = pctToTarget(actual, target);
+      const delta = actual - target;
+      return { ch, actual, target, pct, delta };
+    });
+
+    return h(
+      "div",
+      { style: rowCardStyle },
+      h(
+        "div",
+        { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+        h("h3", {
+          style: {
+            fontSize: 13,
+            fontWeight: 600,
+            color: "#6b7280",
+            textTransform: "uppercase",
+            letterSpacing: ".04em",
+            margin: 0
+          }
+        }, title)
+      ),
+      h(
+        "div",
+        { style: { overflowX: "auto" } },
+        h(
+          "table",
+          { style: { width: "100%", borderCollapse: "collapse" } },
+          h(
+            "thead",
+            null,
+            h(
+              "tr",
+              null,
+              ["Channel", "Pacing", "Target", "% to target", "Delta"].map((col, i) =>
+                h("th", {
+                  key: col,
+                  style: {
+                    fontSize: 11,
+                    color: "#6b7280",
+                    fontWeight: 600,
+                    textAlign: i === 0 ? "left" : "right",
+                    padding: "0 0 8px",
+                    borderBottom: "0.5px solid #e5e7eb"
+                  }
+                }, col)
+              )
+            )
+          ),
+          h(
+            "tbody",
+            null,
+            rows.map(r =>
+              h(
+                "tr",
+                { key: r.ch },
+                h(
+                  "td",
+                  { style: { padding: "8px 0", borderBottom: "0.5px solid #e5e7eb" } },
+                  h("div", { style: { fontSize: 12, color: "#111827", marginBottom: 4 } }, r.ch),
+                  h(
+                    "div",
+                    {
+                      style: {
+                        height: 5,
+                        background: "#f1f5f9",
+                        borderRadius: 3,
+                        overflow: "hidden"
+                      }
+                    },
+                    h("div", {
+                      style: {
+                        height: "100%",
+                        width: Math.min(r.pct || 0, 100) + "%",
+                        background: barColor(r.pct),
+                        borderRadius: 3
+                      }
+                    })
+                  )
+                ),
+                h("td", { style: { textAlign: "right", padding: "8px 0", borderBottom: "0.5px solid #e5e7eb", fontSize: 12 } }, metricKey === "aov" || metricKey === "revenue" ? fmtMoney(r.actual) : fmtNum(r.actual)),
+                h("td", { style: { textAlign: "right", padding: "8px 0", borderBottom: "0.5px solid #e5e7eb", fontSize: 12, color: "#6b7280" } }, metricKey === "aov" || metricKey === "revenue" ? fmtMoney(r.target) : fmtNum(r.target)),
+                h("td", { style: { textAlign: "right", padding: "8px 0", borderBottom: "0.5px solid #e5e7eb", fontSize: 12 } }, r.pct !== null ? r.pct + "%" : "—"),
+                h("td", { style: { textAlign: "right", padding: "8px 0", borderBottom: "0.5px solid #e5e7eb", fontSize: 12 } }, h("span", { style: pillStyle(r.delta) }, deltaFmt(r.delta, metricKey === "aov" || metricKey === "revenue" ? "$" : "")))
+              )
+            )
+          )
+        )
+      )
+    );
+  }
+
+  function renderAov() {
+    return h(
+      "div",
+      null,
+      VS_TARGET_CHANNELS.map(ch => {
+        const actual = getMetricValue(actualByChannel[ch], "aov");
+        const target = targetMap.aov?.[CAT_TO_SEGMENT[ch]] || 0;
+        const delta = actual - target;
+        const pct = pctToTarget(actual, target);
+
+        return h(
+          "div",
+          { key: ch, style: { marginBottom: 14 } },
+          h(
+            "div",
+            {
+              style: {
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                gap: 8,
+                marginBottom: 4
+              }
+            },
+            h("span", { style: { fontSize: 12, color: "#111827" } }, ch),
+            h(
+              "div",
+              { style: { display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" } },
+              h("span", { style: { fontSize: 14, fontWeight: 600 } }, actual ? fmtMoney(actual) : "—"),
+              h("span", { style: { fontSize: 11, color: "#6b7280" } }, "target " + fmtMoney(target)),
+              h("span", { style: pillStyle(delta) }, deltaFmt(delta, "$"))
+            )
+          ),
+          h(
+            "div",
+            {
+              style: {
+                height: 5,
+                background: "#f1f5f9",
+                borderRadius: 3,
+                overflow: "hidden"
+              }
+            },
+            h("div", {
+              style: {
+                height: "100%",
+                width: Math.min(pct || 0, 100) + "%",
+                background: actual ? barColor(pct) : "#d3d1c7",
+                borderRadius: 3
+              }
+            })
+          )
+        );
+      })
+    );
+  }
+
+  function renderHealth() {
+    return h(
+      "div",
+      null,
+      VS_TARGET_CHANNELS.map(ch => {
+        const revenuePct = pctToTarget(getMetricValue(actualByChannel[ch], "revenue"), targetMap.revenue?.[CAT_TO_SEGMENT[ch]] || 0);
+        const leadPct = pctToTarget(getMetricValue(actualByChannel[ch], "leads"), targetMap.leads?.[CAT_TO_SEGMENT[ch]] || 0);
+        const jobPct = pctToTarget(getMetricValue(actualByChannel[ch], "completed"), targetMap.completed?.[CAT_TO_SEGMENT[ch]] || 0);
+        const vals = [revenuePct, leadPct, jobPct].filter(v => v !== null);
+        const avg = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+
+        return h(
+          "div",
+          { key: ch, style: { marginBottom: 12 } },
+          h(
+            "div",
+            {
+              style: {
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 4
+              }
+            },
+            h("span", { style: { fontSize: 12, color: "#111827" } }, ch),
+            h("span", { style: { fontSize: 12, fontWeight: 600, color: barColor(avg) } }, avg !== null ? avg + "%" : "—")
+          ),
+          h(
+            "div",
+            {
+              style: {
+                height: 8,
+                background: "#f1f5f9",
+                borderRadius: 4,
+                overflow: "hidden"
+              }
+            },
+            h("div", {
+              style: {
+                height: "100%",
+                width: Math.min(avg || 0, 100) + "%",
+                background: barColor(avg),
+                borderRadius: 4
+              }
+            })
+          ),
+          h(
+            "div",
+            {
+              style: {
+                display: "flex",
+                gap: 10,
+                fontSize: 11,
+                color: "#6b7280",
+                marginTop: 4,
+                flexWrap: "wrap"
+              }
+            },
+            h("span", null, "Rev " + (revenuePct !== null ? revenuePct + "%" : "—")),
+            h("span", null, "Leads " + (leadPct !== null ? leadPct + "%" : "—")),
+            h("span", null, "Jobs " + (jobPct !== null ? jobPct + "%" : "—"))
+          )
+        );
+      })
+    );
+  }
+
+  return h(
+    "div",
+    { style: { padding: "4px 0 10px" } },
+    h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: isPhone ? "flex-start" : "center",
+          flexDirection: isPhone ? "column" : "row",
+          gap: 10,
+          marginBottom: 18,
+          paddingBottom: 14,
+          borderBottom: "0.5px solid #e5e7eb"
+        }
+      },
+      h(
+        "div",
+        null,
+        h("h1", { style: { fontSize: 20, fontWeight: 500, margin: 0, color: "#111827" } }, "Performance overview"),
+        h("p", { style: { fontSize: 12, color: "#6b7280", margin: "2px 0 0" } }, monthLabel + " — month to date pacing vs target")
+      ),
+      h(
+        "span",
+        {
+          style: {
+            fontSize: 11,
+            padding: "4px 10px",
+            borderRadius: 20,
+            fontWeight: 600,
+            background: "#faeeda",
+            color: "#633806",
+            whiteSpace: "nowrap"
+          }
+        },
+        revenuePct !== null ? revenuePct + "% to revenue target" : "No revenue target"
+      )
+    ),
+
+    h(
+      "div",
+      {
+        style: {
+          display: "grid",
+          gridTemplateColumns: kpiGridCols,
+          gap: 12,
+          marginBottom: 16
+        }
+      },
+      topMetrics.map(renderKpi)
+    ),
+
+    h(
+      "div",
+      {
+        style: {
+          display: "grid",
+          gridTemplateColumns: row2Cols,
+          gap: 12,
+          marginBottom: 16
+        }
+      },
+      h(
+        "div",
+        { style: rowCardStyle },
+        h(
+          "div",
+          {
+            style: {
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 12,
+              flexWrap: "wrap",
+              gap: 8
+            }
+          },
+          h("h3", {
+            style: {
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#6b7280",
+              textTransform: "uppercase",
+              letterSpacing: ".04em",
+              margin: 0
+            }
+          }, "Revenue by channel"),
+          h(
+            "div",
+            {
+              style: {
+                display: "flex",
+                gap: 16,
+                flexWrap: "wrap",
+                fontSize: 11,
+                color: "#6b7280"
+              }
+            },
+            h("span", null, h("span", { style: { width: 8, height: 8, display: "inline-block", borderRadius: 2, background: "#378add", marginRight: 4 } }), "Pacing"),
+            h("span", null, h("span", { style: { width: 8, height: 8, display: "inline-block", borderRadius: 2, background: "#b4b2a9", marginRight: 4 } }), "Target")
+          )
+        ),
+        renderRevenueBars()
+      ),
+      h(
+        "div",
+        { style: rowCardStyle },
+        h("div", { style: { marginBottom: 12 } },
+          h("h3", {
+            style: {
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#6b7280",
+              textTransform: "uppercase",
+              letterSpacing: ".04em",
+              margin: 0
+            }
+          }, "% to revenue target")
+        ),
+        renderRevenuePct()
+      )
+    ),
+
+    h(
+      "div",
+      {
+        style: {
+          display: "grid",
+          gridTemplateColumns: row3Cols,
+          gap: 12,
+          marginBottom: 16
+        }
+      },
+      renderTable("leads", "Leads vs target by channel"),
+      renderTable("completed", "Completed jobs vs target")
+    ),
+
+    h(
+      "div",
+      {
+        style: {
+          display: "grid",
+          gridTemplateColumns: row4Cols,
+          gap: 12
+        }
+      },
+      h(
+        "div",
+        { style: rowCardStyle },
+        h("div", { style: { marginBottom: 12 } },
+          h("h3", {
+            style: {
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#6b7280",
+              textTransform: "uppercase",
+              letterSpacing: ".04em",
+              margin: 0
+            }
+          }, "AOV by channel")
+        ),
+        renderAov()
+      ),
+      h(
+        "div",
+        { style: rowCardStyle },
+        h("div", { style: { marginBottom: 12 } },
+          h("h3", {
+            style: {
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#6b7280",
+              textTransform: "uppercase",
+              letterSpacing: ".04em",
+              margin: 0
+            }
+          }, "Channel health snapshot")
+        ),
+        renderHealth()
+      )
+    )
+  );
+}
+
 const baseCardStyle = {
   background: "#fff",
   borderRadius: 12,
@@ -1760,7 +2513,22 @@ function Dashboard() {
         "div",
         { style: { marginBottom: 20 } },
         React.createElement("h1", { style: { margin: 0, fontSize: isPhone ? 18 : 20, fontWeight: 700, color: "#111827" } }, "KPI Dashboard"),
-        React.createElement("p", { style: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" } }, "NuBrakes · " + market + " · " + chanCat + " · " + (tab === "overview" ? overviewLabel : periodLabel)),
+        React.createElement(
+  "p",
+  { style: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" } },
+  "NuBrakes · " +
+    market +
+    " · " +
+    chanCat +
+    " · " +
+    (tab === "overview"
+      ? overviewLabel
+      : tab === "vsTarget"
+      ? (getLatestMonthKey(filtered || rawData)
+          ? new Date(getLatestMonthKey(filtered || rawData) + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })
+          : "Current Month")
+      : periodLabel)
+),
         React.createElement(
           "div",
           { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 } },
@@ -1813,7 +2581,7 @@ function Dashboard() {
       React.createElement(
         "div",
         { style: { display: "flex", marginBottom: 22, borderBottom: "1.5px solid #e5e7eb", overflowX: "auto" } },
-        [["overview", "Overview"], ["trends", "Trends"]].map(([t, label]) =>
+        [["overview", "Overview"], ["trends", "Trends"], ["vsTarget", "vs Target"]].map(([t, label]) =>
           React.createElement(
             "button",
             {
@@ -2090,7 +2858,15 @@ function Dashboard() {
               : null
           )
         : null
-    ),
+    ,tab === "vsTarget"
+        ? React.createElement(VsTargetTab, {
+            filtered,
+            rawData,
+            targetRows: TARGET_DATA,
+            isPhone,
+            isTablet
+          })
+        : null),
     React.createElement(ChatOverlay, {
       open: chatOpen,
       onClose: () => setChatOpen(false),
