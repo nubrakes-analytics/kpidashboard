@@ -2893,7 +2893,7 @@ function Dashboard() {
         ? React.createElement(VsTargetTab, {
             filtered,
             rawData,
-            targetRows: TARGET_DATA,
+            targetRows: targetData,
             isPhone,
             isTablet
           })
