@@ -1331,7 +1331,7 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
           { style: { display: "flex", alignItems: "center", gap: 8 } },
           React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", background: "#10b981" } }),
           React.createElement("span", { style: { fontSize: 13, fontWeight: 700, color: "#fff" } }, "AI Insights"),
-          React.createElement("span", { style: { fontSize: 11, color: "#9ca3af", marginLeft: 2 } }, `${period} · All Markets· All Channels`)
+          React.createElement("span", { style: { fontSize: 11, color: "#9ca3af", marginLeft: 2 } }, `${period} · All Markets · All Channels`)
         ),
         React.createElement(
           "div",
