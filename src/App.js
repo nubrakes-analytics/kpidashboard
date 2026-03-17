@@ -697,18 +697,46 @@ function applyProjectionToBreakdownSeriesFromRaw(rows, period, groupKey) {
 
 
 async function loadData() {
-  for (const url of ["/data.json", DATA_URL]) {
+  const dataUrls = ["/data.json", DATA_URL];
+  const targetUrls = ["/target.json", "target.json"];
+
+  let mainData = null;
+  let targetData = [];
+
+  for (const url of dataUrls) {
     try {
       const r = await fetch(url);
       if (!r.ok) throw new Error(r.status);
       const d = JSON.parse(await r.text());
       if (!Array.isArray(d) || !d.length) throw new Error("empty");
-      return d;
+      mainData = d;
+      break;
     } catch (e) {
-      console.error(url, e);
+      console.error("main data load failed:", url, e);
     }
   }
-  throw new Error("all failed");
+
+  for (const url of targetUrls) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(r.status);
+      const d = JSON.parse(await r.text());
+      if (!Array.isArray(d)) throw new Error("invalid target data");
+      targetData = d;
+      break;
+    } catch (e) {
+      console.error("target data load failed:", url, e);
+    }
+  }
+
+  if (!mainData) {
+    throw new Error("all main data sources failed");
+  }
+
+  return {
+    mainData,
+    targetData
+  };
 }
 
 function getProjectedMetricValue(metricKey, value, pacing) {
@@ -2303,7 +2331,6 @@ const baseCardStyle = {
 
 function Dashboard() {
   const { isPhone, isTablet } = useViewport();
-
   const [rawData, setRawData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [usingFallback, setUsingFallback] = useState(false);
@@ -2315,6 +2342,7 @@ function Dashboard() {
   const [chartType, setChartType] = useState("line");
   const [trendView, setTrendView] = useState("absolute");
   const [chatOpen, setChatOpen] = useState(false);
+  const [targetData, setTargetData] = useState(TARGET_DATA);
 
   useEffect(() => {
     if (SHARE_INCOMPATIBLE.has(trendKey) && trendView === "share") {
@@ -2323,18 +2351,21 @@ function Dashboard() {
   }, [trendKey, trendView]);
 
   useEffect(() => {
-    loadData()
-      .then(d => {
-        setRawData(mapRows(d));
-        setUsingFallback(false);
-        setLoading(false);
-      })
-      .catch(() => {
-        setRawData(mapRows(FALLBACK));
-        setUsingFallback(true);
-        setLoading(false);
-      });
-  }, []);
+  loadData()
+    .then(({ mainData, targetData }) => {
+      setRawData(mapRows(mainData));
+      if (Array.isArray(targetData) && targetData.length) {
+        setTargetData(targetData);
+      }
+      setUsingFallback(false);
+      setLoading(false);
+    })
+    .catch(() => {
+      setRawData(mapRows(FALLBACK));
+      setUsingFallback(true);
+      setLoading(false);
+    });
+}, []);
 
   const markets = useMemo(() => {
     const s = {};
