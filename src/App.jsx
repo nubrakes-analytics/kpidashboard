@@ -2028,9 +2028,9 @@ function CopilotOverlay({ open, onClose }) {
               width: 34,
               height: 34,
               objectFit: "contain",
-              borderRadius: 8,
-              background: "rgba(255,255,255,0.08)",
-              padding: 4,
+              background: "#fff",
+padding: 4,
+borderRadius: 8,
               flexShrink: 0
             }
           }),
