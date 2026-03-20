@@ -4,6 +4,25 @@ const DATA_URL = "https://ai-data.jonathan-libiran.workers.dev/data-ai.json";
 const AI_MODEL = "gpt-4.1";
 const AI_ENDPOINT = "/api/ai";
 
+const COPILOT_AI_ENDPOINT =
+  "https://nubrakes-copilot.jonathan-libiran.workers.dev/api/ai";
+
+const COPILOT_DATASET_LIST_URL =
+  "https://nubrakes-analytics.github.io/NuBrakes-Copilot/data/dataset_list.json";
+
+const COPILOT_STORAGE_KEY = "nubrakes-ai-copilot-chat-v1";
+
+const COPILOT_EXAMPLES = [
+  "What does average order value mean?",
+  "Where can I find the ops dashboard?",
+  "Which dataset should I use for supply and demand by market?",
+  "Why is conversion rate down this March?",
+  "What was the referral revenue in February 2026?",
+  "Why are completed jobs down?",
+  "Which markets are underperforming?",
+  "What changed in lead mix this week?"
+];
+
 const METRICS = [
   { key: "leads", label: "Leads", fmt: v => Math.round(v).toLocaleString(), color: "#6366f1" },
   { key: "booked", label: "Bookings", fmt: v => Math.round(v).toLocaleString(), color: "#0ea5e9" },
@@ -24,6 +43,7 @@ const CAT_COLORS = {
   Brand: "#0ea5e9",
   GBL: "#f59e0b",
   Referral: "#10b981",
+  Fleet: "#8b5cf6",
   Other: "#94a3b8"
 };
 
@@ -40,7 +60,6 @@ const FALLBACK = [
   { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Tampa", "Channel Category": "Core", leads: 17, jobs_booked: 5, canceled_jobs: 2, invoiced_customer_price: 1987, jobs_completed: 4 }
 ];
 
-//vs TARGET TAB
 const TARGET_DATA = [
   { month_start: "2026-08-01", month_label: "Aug-26 F", metric: "aov", segment: "core", value: 495 },
   { month_start: "2026-08-01", month_label: "Aug-26 F", metric: "aov", segment: "gbl", value: 477 },
@@ -55,10 +74,6 @@ const TARGET_DATA = [
   { month_start: "2026-09-01", month_label: "Sep-26 F", metric: "aov", segment: "referral", value: 473 },
   { month_start: "2026-09-01", month_label: "Sep-26 F", metric: "aov", segment: "fleet", value: 548 },
   { month_start: "2026-09-01", month_label: "Sep-26 F", metric: "aov", segment: "total", value: 493 }
-
-  // add the rest of your target rows here:
-  // revenue, leads, completed, aov
-  // segments: core, gbl, brand, referral, fleet, total
 ];
 
 const VS_TARGET_CHANNELS = ["Core", "GBL", "Brand", "Referral", "Fleet"];
@@ -207,8 +222,6 @@ function buildProjectedActualByChannel(rows, period = "month") {
 
   return out;
 }
-
-//API CALL
 
 async function callAPI(messages) {
   const response = await fetch(AI_ENDPOINT, {
@@ -394,7 +407,7 @@ function aggregateSeriesByToggle(rows, period) {
         completed,
         revenue,
         bookingRate: leads ? booked / leads : 0,
-       cancelRate: (canceled + completed) ? canceled / (canceled + completed) : 0,
+        cancelRate: (canceled + completed) ? canceled / (canceled + completed) : 0,
         conversionRate: leads ? completed / leads : 0,
         aov: completed ? revenue / completed : 0
       };
@@ -455,15 +468,15 @@ function getScopedAggregates(rows, period, market, chanCat) {
   const series = aggregateSeriesByToggle(filteredRows, period);
   const latestLabel = series.length ? series[series.length - 1].label : null;
 
-const currentPeriodRows = latestLabel
-  ? filteredRows.filter(r => getPeriodKey(r, period) === latestLabel)
-  : [];
+  const currentPeriodRows = latestLabel
+    ? filteredRows.filter(r => getPeriodKey(r, period) === latestLabel)
+    : [];
 
-const overall = aggregate(
-  (period === "week" || period === "month" || period === "day")
-    ? currentPeriodRows
-    : filteredRows
-);
+  const overall = aggregate(
+    (period === "week" || period === "month" || period === "day")
+      ? currentPeriodRows
+      : filteredRows
+  );
 
   const result = {
     rowCount: filteredRows.length,
@@ -485,16 +498,16 @@ const overall = aggregate(
   }
 
   if (market === "All Markets" && chanCat === "All Channels") {
-  result.seriesByMarket =
-    period === "week" || period === "month"
-      ? applyProjectionToBreakdownSeriesFromRaw(filteredRows, period, "market")
-      : buildSeriesBreakdown(filteredRows, period, "market");
+    result.seriesByMarket =
+      period === "week" || period === "month"
+        ? applyProjectionToBreakdownSeriesFromRaw(filteredRows, period, "market")
+        : buildSeriesBreakdown(filteredRows, period, "market");
 
-  result.seriesByChannel =
-    period === "week" || period === "month"
-      ? applyProjectionToBreakdownSeriesFromRaw(filteredRows, period, "cat")
-      : buildSeriesBreakdown(filteredRows, period, "cat");
-}
+    result.seriesByChannel =
+      period === "week" || period === "month"
+        ? applyProjectionToBreakdownSeriesFromRaw(filteredRows, period, "cat")
+        : buildSeriesBreakdown(filteredRows, period, "cat");
+  }
 
   return result;
 }
@@ -735,7 +748,6 @@ function applyProjectionToBreakdownSeriesFromRaw(rows, period, groupKey) {
   });
 }
 
-
 async function loadData() {
   const dataUrls = ["/data.json", DATA_URL];
   const targetUrls = ["/target.json", "target.json"];
@@ -783,6 +795,40 @@ function getProjectedMetricValue(metricKey, value, pacing) {
   const isRateOrAov = metricKey.includes("Rate") || metricKey === "aov";
   if (!pacing || isRateOrAov) return value;
   return pacing.projected ?? value;
+}
+
+function createCopilotMessage(role, content, meta = null) {
+  return {
+    id:
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    role,
+    content,
+    meta,
+    createdAt: new Date().toISOString()
+  };
+}
+
+function isValidHttpUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function formatCopilotTime(iso) {
+  try {
+    return new Date(iso).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit"
+    });
+  } catch {
+    return "";
+  }
 }
 
 function Sparkline({ data, metricKey, color, pacing }) {
@@ -1405,8 +1451,8 @@ function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
     setAiLoading(true);
 
     const useFullDataset = shouldUseFullDataset(question);
-    const aiMarket = useFullDataset ? "All Markets" : "All Markets";
-    const aiChannel = useFullDataset ? "All Channels" : "All Channels";
+    const aiMarket = useFullDataset ? "All Markets" : market;
+    const aiChannel = useFullDataset ? "All Channels" : chanCat;
     const scopedAgg = getScopedAggregates(rawData, period, aiMarket, aiChannel);
 
     const systemCtx = `
@@ -1415,7 +1461,7 @@ You are a business analyst for NuBrakes.
 Use the aggregated dataset below as the only source of truth.
 
 Scope mode:
-- "Full dataset override triggered by user question"
+- ${useFullDataset ? "Full dataset override triggered by user question" : "Respect current dashboard filters"}
 
 Scope:
 - Period: ${period}
@@ -1529,7 +1575,7 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
           { style: { display: "flex", alignItems: "center", gap: 8 } },
           React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", background: "#10b981" } }),
           React.createElement("span", { style: { fontSize: 13, fontWeight: 700, color: "#fff" } }, "AI Insights"),
-          React.createElement("span", { style: { fontSize: 11, color: "#9ca3af", marginLeft: 2 } }, `${period} · All Markets · All Channels`)
+          React.createElement("span", { style: { fontSize: 11, color: "#9ca3af", marginLeft: 2 } }, `${period} · ${market} · ${chanCat}`)
         ),
         React.createElement(
           "div",
@@ -1575,7 +1621,7 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
           ? React.createElement(
               "div",
               { style: { display: "flex", flexDirection: "column", gap: 8, marginTop: 8 } },
-              React.createElement("p", { style: { fontSize: 12, color: "#9ca3af", margin: 0, textAlign: "center", marginBottom: 4 } }, "Ask anything about your data"),
+              React.createElement("p", { style: { fontSize: 12, color: "#9ca3af", margin: 0, textAlign: "center", marginBottom: 4 } }, "Ask anything about your current dashboard scope"),
               ["What's the top performing market?", "How is revenue trending?", "Which channel has the best conversion rate?"].map(q =>
                 React.createElement("button", {
                   key: q,
@@ -1738,12 +1784,726 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
   );
 }
 
+function CopilotOverlay({ open, onClose }) {
+  const [messages, setMessages] = useState(() => {
+    if (typeof window === "undefined") {
+      return [
+        createCopilotMessage(
+          "assistant",
+          "Hi — I’m your NuBrakes AI Copilot. Ask about metrics, markets, dashboards, business drivers, or which dataset to use."
+        )
+      ];
+    }
+
+    try {
+      const raw = window.localStorage.getItem(COPILOT_STORAGE_KEY);
+      if (!raw) {
+        return [
+          createCopilotMessage(
+            "assistant",
+            "Hi — I’m your NuBrakes AI Copilot. Ask about metrics, markets, dashboards, business drivers, or which dataset to use."
+          )
+        ];
+      }
+
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length
+        ? parsed
+        : [
+            createCopilotMessage(
+              "assistant",
+              "Hi — I’m your NuBrakes AI Copilot. Ask about metrics, markets, dashboards, business drivers, or which dataset to use."
+            )
+          ];
+    } catch {
+      return [
+        createCopilotMessage(
+          "assistant",
+          "Hi — I’m your NuBrakes AI Copilot. Ask about metrics, markets, dashboards, business drivers, or which dataset to use."
+        )
+      ];
+    }
+  });
+
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [datasets, setDatasets] = useState([]);
+  const [datasetLoadError, setDatasetLoadError] = useState(null);
+  const [lastQuestion, setLastQuestion] = useState("");
+
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+  const askAbortRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    try {
+      window.localStorage.setItem(COPILOT_STORAGE_KEY, JSON.stringify(messages));
+    } catch {}
+  }, [messages, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+
+    async function loadDatasets() {
+      try {
+        setDatasetLoadError(null);
+        const r = await fetch(COPILOT_DATASET_LIST_URL, { signal: controller.signal });
+        if (!r.ok) throw new Error(`Failed to load dataset list: ${r.status}`);
+        const d = await r.json();
+        const parsed = Array.isArray(d)
+          ? d
+          : d && Array.isArray(d.datasets)
+          ? d.datasets
+          : [];
+        setDatasets(parsed);
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        console.error("dataset_list.json load failed", err);
+        setDatasets([]);
+        setDatasetLoadError("Could not load dataset list.");
+      }
+    }
+
+    loadDatasets();
+    return () => controller.abort();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setTimeout(() => inputRef.current?.focus(), 120);
+  }, [open]);
+
+  useEffect(() => {
+    return () => {
+      askAbortRef.current?.abort();
+    };
+  }, []);
+
+  async function handleAsk(questionText) {
+    const question = (questionText ?? input).trim();
+    if (!question || loading) return;
+
+    askAbortRef.current?.abort();
+    const controller = new AbortController();
+    askAbortRef.current = controller;
+
+    const userMessage = createCopilotMessage("user", question);
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput("");
+    setLoading(true);
+    setLastQuestion(question);
+
+    try {
+      const res = await fetch(COPILOT_AI_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ question }),
+        signal: controller.signal
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Request failed with ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      const assistantMessage = createCopilotMessage(
+        "assistant",
+        data.answer || "No answer returned.",
+        {
+          dataset: data.dataset || data.dataset_used || "Approved dataset",
+          rows: data.rows || data.supporting_rows || [],
+          dataset_link: data.dataset_link || data.link || null,
+          dashboard_link: data.dashboard_link || data.url || null
+        }
+      );
+
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      if (error.name === "AbortError") return;
+
+      console.error("Copilot request failed", error);
+
+      const failedMessage = createCopilotMessage(
+        "assistant",
+        "I couldn’t get a response right now. Please try again. Check whether the Worker and /api/ai endpoint are live and returning valid JSON.",
+        {
+          dataset: "Connection error",
+          rows: [],
+          dataset_link: null,
+          dashboard_link: null,
+          error: true
+        }
+      );
+
+      setMessages(prev => [...prev, failedMessage]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleRetry() {
+    if (!lastQuestion || loading) return;
+    handleAsk(lastQuestion);
+  }
+
+  function clearChat() {
+    const starter = createCopilotMessage(
+      "assistant",
+      "Hi — I’m your NuBrakes AI Copilot. Ask about metrics, markets, dashboards, business drivers, or which dataset to use."
+    );
+    setMessages([starter]);
+    setLastQuestion("");
+    try {
+      window.localStorage.setItem(COPILOT_STORAGE_KEY, JSON.stringify([starter]));
+    } catch {}
+  }
+
+  if (!open) return null;
+
+  return React.createElement(
+    "div",
+    {
+      style: {
+        position: "fixed",
+        bottom: 88,
+        right: 84,
+        width: 430,
+        maxWidth: "calc(100vw - 40px)",
+        zIndex: 1000,
+        animation: "slideUp 0.22s ease"
+      }
+    },
+    React.createElement(
+      "div",
+      {
+        style: {
+          background: "#fff",
+          borderRadius: 18,
+          boxShadow: "0 10px 40px rgba(0,0,0,0.18)",
+          border: "1px solid #e5e7eb",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          maxHeight: "74vh"
+        }
+      },
+      React.createElement(
+        "div",
+        {
+          style: {
+            padding: "12px 16px",
+            background: "#0E2468",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10
+          }
+        },
+        React.createElement(
+          "div",
+          {
+            style: {
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              minWidth: 0
+            }
+          },
+          React.createElement("img", {
+            src: "/nubrakes-ai-copilot.svg",
+            alt: "NuBrakes AI Copilot",
+            style: {
+              width: 34,
+              height: 34,
+              objectFit: "contain",
+              borderRadius: 8,
+              background: "rgba(255,255,255,0.08)",
+              padding: 4,
+              flexShrink: 0
+            }
+          }),
+          React.createElement(
+            "div",
+            { style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 } },
+            React.createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "#fff",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis"
+                }
+              },
+              "NuBrakes AI Copilot"
+            ),
+            React.createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 11,
+                  color: "rgba(255,255,255,0.75)",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis"
+                }
+              },
+              "Metrics, dashboards, datasets, and business questions"
+            )
+          )
+        ),
+        React.createElement(
+          "div",
+          { style: { display: "flex", gap: 6, alignItems: "center" } },
+          React.createElement(
+            "button",
+            {
+              onClick: clearChat,
+              style: {
+                background: "rgba(255,255,255,0.12)",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                color: "#fff",
+                fontSize: 11,
+                padding: "4px 8px"
+              }
+            },
+            "Clear"
+          ),
+          React.createElement(
+            "button",
+            {
+              onClick: onClose,
+              style: {
+                background: "rgba(255,255,255,0.12)",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                color: "#fff",
+                fontSize: 16,
+                width: 26,
+                height: 26,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }
+            },
+            "×"
+          )
+        )
+      ),
+      React.createElement(
+        "div",
+        {
+          style: {
+            padding: "10px 12px",
+            borderBottom: "1px solid #f1f5f9",
+            background: "#f8fafc"
+          }
+        },
+        React.createElement(
+          "div",
+          {
+            style: {
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8
+            }
+          },
+          COPILOT_EXAMPLES.slice(0, 4).map(example =>
+            React.createElement(
+              "button",
+              {
+                key: example,
+                onClick: () => handleAsk(example),
+                disabled: loading,
+                style: {
+                  background: "#fff",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 999,
+                  padding: "6px 10px",
+                  fontSize: 11,
+                  color: "#374151",
+                  cursor: "pointer",
+                  opacity: loading ? 0.6 : 1
+                }
+              },
+              example
+            )
+          )
+        )
+      ),
+      React.createElement(
+        "div",
+        {
+          style: {
+            flex: 1,
+            overflowY: "auto",
+            padding: "12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            minHeight: 220,
+            background: "#fcfcfd"
+          }
+        },
+        datasetLoadError
+          ? React.createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 11,
+                  color: "#b45309",
+                  background: "#fff7ed",
+                  border: "1px solid #fed7aa",
+                  borderRadius: 10,
+                  padding: "8px 10px"
+                }
+              },
+              datasetLoadError
+            )
+          : null,
+        messages.map(msg => {
+          const isUser = msg.role === "user";
+          const firstRow = msg.meta?.rows?.[0] || null;
+
+          const datasetLinkRaw = msg.meta?.dataset_link || firstRow?.dataset_link;
+          const dashboardLinkRaw =
+            msg.meta?.dashboard_link ||
+            firstRow?.dashboard_link ||
+            firstRow?.dashboard_url;
+
+          const datasetLink = isValidHttpUrl(datasetLinkRaw) ? datasetLinkRaw : null;
+          const dashboardLink = isValidHttpUrl(dashboardLinkRaw) ? dashboardLinkRaw : null;
+          const rowsCount = Array.isArray(msg.meta?.rows) ? msg.meta.rows.length : 0;
+
+          return React.createElement(
+            "div",
+            {
+              key: msg.id,
+              style: {
+                display: "flex",
+                justifyContent: isUser ? "flex-end" : "flex-start"
+              }
+            },
+            React.createElement(
+              "div",
+              {
+                style: {
+                  maxWidth: "88%",
+                  borderRadius: 16,
+                  padding: "10px 12px",
+                  background: isUser ? "#0E2468" : "#fff",
+                  color: isUser ? "#fff" : "#0E2468",
+                  border: isUser ? "none" : "1px solid #e5e7eb",
+                  boxShadow: isUser ? "none" : "0 1px 3px rgba(0,0,0,0.04)"
+                }
+              },
+              React.createElement(
+                "div",
+                {
+                  style: {
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    marginBottom: 6
+                  }
+                },
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.12em",
+                      opacity: 0.7
+                    }
+                  },
+                  isUser ? "You" : "NuBrakes AI Copilot"
+                ),
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      fontSize: 10,
+                      opacity: 0.55,
+                      whiteSpace: "nowrap"
+                    }
+                  },
+                  formatCopilotTime(msg.createdAt)
+                )
+              ),
+              React.createElement(
+                "div",
+                {
+                  style: {
+                    whiteSpace: "pre-wrap",
+                    fontSize: 12,
+                    lineHeight: 1.6
+                  }
+                },
+                msg.content
+              ),
+              !isUser && (msg.meta?.dataset || rowsCount > 0)
+                ? React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 6,
+                        marginTop: 8
+                      }
+                    },
+                    msg.meta?.dataset
+                      ? React.createElement(
+                          "span",
+                          {
+                            style: {
+                              fontSize: 10,
+                              padding: "3px 8px",
+                              borderRadius: 999,
+                              background: "#f8fafc",
+                              border: "1px solid #e5e7eb",
+                              color: "#334155"
+                            }
+                          },
+                          "Dataset: " + msg.meta.dataset
+                        )
+                      : null,
+                    rowsCount > 0
+                      ? React.createElement(
+                          "span",
+                          {
+                            style: {
+                              fontSize: 10,
+                              padding: "3px 8px",
+                              borderRadius: 999,
+                              background: "#f8fafc",
+                              border: "1px solid #e5e7eb",
+                              color: "#334155"
+                            }
+                          },
+                          "Rows: " + rowsCount
+                        )
+                      : null
+                  )
+                : null,
+              !isUser && (datasetLink || dashboardLink)
+                ? React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        marginTop: 10
+                      }
+                    },
+                    datasetLink
+                      ? React.createElement(
+                          "a",
+                          {
+                            href: datasetLink,
+                            target: "_blank",
+                            rel: "noreferrer",
+                            style: {
+                              textDecoration: "none",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: "#fff",
+                              background: "#0E2468",
+                              padding: "7px 10px",
+                              borderRadius: 10
+                            }
+                          },
+                          "Open dataset"
+                        )
+                      : null,
+                    dashboardLink
+                      ? React.createElement(
+                          "a",
+                          {
+                            href: dashboardLink,
+                            target: "_blank",
+                            rel: "noreferrer",
+                            style: {
+                              textDecoration: "none",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: "#fff",
+                              background: "#E63F2B",
+                              padding: "7px 10px",
+                              borderRadius: 10
+                            }
+                          },
+                          "Open dashboard"
+                        )
+                      : null
+                  )
+                : null,
+              !isUser && msg.meta?.error
+                ? React.createElement(
+                    "div",
+                    { style: { marginTop: 10 } },
+                    React.createElement(
+                      "button",
+                      {
+                        onClick: handleRetry,
+                        style: {
+                          background: "#f8fafc",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 10,
+                          cursor: "pointer",
+                          color: "#0E2468",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          padding: "7px 10px"
+                        }
+                      },
+                      "Retry"
+                    )
+                  )
+                : null
+            )
+          );
+        }),
+        loading
+          ? React.createElement(
+              "div",
+              { style: { display: "flex", justifyContent: "flex-start" } },
+              React.createElement(
+                "div",
+                {
+                  style: {
+                    padding: "8px 12px",
+                    borderRadius: 12,
+                    background: "#fff",
+                    border: "1px solid #e5e7eb",
+                    fontSize: 12,
+                    color: "#6b7280"
+                  }
+                },
+                "Thinking..."
+              )
+            )
+          : null,
+        React.createElement("div", { ref: messagesEndRef })
+      ),
+      React.createElement(
+        "div",
+        {
+          style: {
+            borderTop: "1px solid #f1f5f9",
+            padding: "10px 12px",
+            background: "#fff"
+          }
+        },
+        React.createElement(
+          "div",
+          {
+            style: {
+              display: "flex",
+              gap: 8,
+              alignItems: "stretch"
+            }
+          },
+          React.createElement("textarea", {
+            ref: inputRef,
+            value: input,
+            onChange: e => setInput(e.target.value),
+            onKeyDown: e => {
+              if (e.nativeEvent && e.nativeEvent.isComposing) return;
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleAsk(input);
+              }
+            },
+            placeholder: "Ask about metrics, datasets, dashboards, or business drivers...",
+            rows: 2,
+            style: {
+              flex: 1,
+              resize: "none",
+              borderRadius: 12,
+              border: "1.5px solid #e5e7eb",
+              padding: "10px 12px",
+              fontSize: 12,
+              color: "#374151",
+              outline: "none",
+              background: "#f8fafc"
+            }
+          }),
+          React.createElement(
+            "button",
+            {
+              onClick: () => handleAsk(input),
+              disabled: loading || !input.trim(),
+              style: {
+                padding: "10px 14px",
+                borderRadius: 12,
+                border: "none",
+                background: "#0E2468",
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                opacity: loading || !input.trim() ? 0.5 : 1,
+                flexShrink: 0
+              }
+            },
+            "Send"
+          )
+        ),
+        React.createElement(
+          "div",
+          {
+            style: {
+              marginTop: 6,
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 8,
+              fontSize: 10,
+              color: "#6b7280",
+              flexWrap: "wrap"
+            }
+          },
+          React.createElement(
+            "span",
+            null,
+            "Press Enter to send. Shift+Enter for new line."
+          ),
+          React.createElement(
+            "span",
+            null,
+            "Datasets: " + datasets.length
+          )
+        )
+      )
+    )
+  );
+}
 
 function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
   const h = React.createElement;
 
   const monthKey = getLatestMonthKey(filtered.length ? filtered : rawData);
-  const monthRows = getMonthRows(filtered.length ? filtered : rawData, monthKey);
+  getMonthRows(filtered.length ? filtered : rawData, monthKey);
   const actualByChannel = buildProjectedActualByChannel(filtered.length ? filtered : rawData, "month");
   const targetMap = buildMetricTargetMap(targetRows, monthKey);
 
@@ -2382,6 +3142,7 @@ function Dashboard() {
   const [chartType, setChartType] = useState("line");
   const [trendView, setTrendView] = useState("absolute");
   const [chatOpen, setChatOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [targetData, setTargetData] = useState(TARGET_DATA);
 
   useEffect(() => {
@@ -2391,21 +3152,21 @@ function Dashboard() {
   }, [trendKey, trendView]);
 
   useEffect(() => {
-  loadData()
-    .then(({ mainData, targetData }) => {
-      setRawData(mapRows(mainData));
-      if (Array.isArray(targetData) && targetData.length) {
-        setTargetData(targetData);
-      }
-      setUsingFallback(false);
-      setLoading(false);
-    })
-    .catch(() => {
-      setRawData(mapRows(FALLBACK));
-      setUsingFallback(true);
-      setLoading(false);
-    });
-}, []);
+    loadData()
+      .then(({ mainData, targetData }) => {
+        setRawData(mapRows(mainData));
+        if (Array.isArray(targetData) && targetData.length) {
+          setTargetData(targetData);
+        }
+        setUsingFallback(false);
+        setLoading(false);
+      })
+      .catch(() => {
+        setRawData(mapRows(FALLBACK));
+        setUsingFallback(true);
+        setLoading(false);
+      });
+  }, []);
 
   const markets = useMemo(() => {
     const s = {};
@@ -2585,21 +3346,21 @@ function Dashboard() {
         { style: { marginBottom: 20 } },
         React.createElement("h1", { style: { margin: 0, fontSize: isPhone ? 18 : 20, fontWeight: 700, color: "#111827" } }, "KPI Dashboard"),
         React.createElement(
-  "p",
-  { style: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" } },
-  "NuBrakes · " +
-    market +
-    " · " +
-    chanCat +
-    " · " +
-    (tab === "overview"
-      ? overviewLabel
-      : tab === "vsTarget"
-      ? (getLatestMonthKey(filtered || rawData)
-          ? new Date(getLatestMonthKey(filtered || rawData) + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })
-          : "Current Month")
-      : periodLabel)
-),
+          "p",
+          { style: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" } },
+          "NuBrakes · " +
+            market +
+            " · " +
+            chanCat +
+            " · " +
+            (tab === "overview"
+              ? overviewLabel
+              : tab === "vsTarget"
+              ? (getLatestMonthKey(filtered || rawData)
+                  ? new Date(getLatestMonthKey(filtered || rawData) + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })
+                  : "Current Month")
+              : periodLabel)
+        ),
         React.createElement(
           "div",
           { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 } },
@@ -2928,8 +3689,8 @@ function Dashboard() {
                 )
               : null
           )
-        : null
-    ,tab === "vsTarget"
+        : null,
+      tab === "vsTarget"
         ? React.createElement(VsTargetTab, {
             filtered,
             rawData,
@@ -2937,7 +3698,8 @@ function Dashboard() {
             isPhone,
             isTablet
           })
-        : null),
+        : null
+    ),
     React.createElement(ChatOverlay, {
       open: chatOpen,
       onClose: () => setChatOpen(false),
@@ -2946,6 +3708,60 @@ function Dashboard() {
       market,
       chanCat
     }),
+    React.createElement(CopilotOverlay, {
+      open: copilotOpen,
+      onClose: () => setCopilotOpen(false)
+    }),
+    React.createElement(
+      "button",
+      {
+        onClick: () => setCopilotOpen(o => !o),
+        style: {
+          position: "fixed",
+          bottom: 20,
+          right: 84,
+          width: 52,
+          height: 52,
+          borderRadius: "50%",
+          background: copilotOpen ? "#16358F" : "#0E2468",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.22)",
+          zIndex: 1001,
+          transition: "background 0.2s",
+          overflow: "hidden",
+          padding: 0
+        }
+      },
+      copilotOpen
+        ? React.createElement(
+            "svg",
+            {
+              width: 18,
+              height: 18,
+              viewBox: "0 0 24 24",
+              fill: "none",
+              stroke: "#fff",
+              strokeWidth: "2.5",
+              strokeLinecap: "round"
+            },
+            React.createElement("line", { x1: "18", y1: "6", x2: "6", y2: "18" }),
+            React.createElement("line", { x1: "6", y1: "6", x2: "18", y2: "18" })
+          )
+        : React.createElement("img", {
+            src: "/nubrakes-ai-copilot.svg",
+            alt: "Copilot",
+            style: {
+              width: 28,
+              height: 28,
+              objectFit: "contain",
+              display: "block"
+            }
+          })
+    ),
     React.createElement(
       "button",
       {
