@@ -164,16 +164,6 @@ function buildMetricTargetMap(targetRows, monthKey) {
   return out;
 }
 
-function buildActualByChannel(rows) {
-  const out = {};
-  VS_TARGET_CHANNELS.forEach(ch => {
-    const agg = aggregate(rows.filter(r => r.cat === ch));
-    out[ch] = agg;
-  });
-  out.Total = aggregate(rows);
-  return out;
-}
-
 function getMetricValue(obj, metric) {
   if (!obj) return 0;
   if (metric === "revenue") return obj.revenue || 0;
@@ -181,6 +171,30 @@ function getMetricValue(obj, metric) {
   if (metric === "completed") return obj.completed || 0;
   if (metric === "aov") return obj.aov || 0;
   return 0;
+}
+
+function sumK(arr, key) {
+  return arr.reduce((a, r) => a + (Number(r[key]) || 0), 0);
+}
+
+function aggregate(rows) {
+  const leads = sumK(rows, "leads");
+  const booked = sumK(rows, "booked");
+  const canceled = sumK(rows, "canceled");
+  const completed = sumK(rows, "completed");
+  const revenue = sumK(rows, "revenue");
+
+  return {
+    leads,
+    booked,
+    canceled,
+    completed,
+    revenue,
+    bookingRate: leads ? booked / leads : 0,
+    cancelRate: (canceled + completed) ? canceled / (canceled + completed) : 0,
+    conversionRate: leads ? completed / leads : 0,
+    aov: completed ? revenue / completed : 0
+  };
 }
 
 function buildProjectedActualByChannel(rows, period = "month") {
@@ -385,30 +399,6 @@ function getBackdropStyle() {
     inset: 0,
     background: "rgba(15, 23, 42, 0.38)",
     backdropFilter: "blur(3px)"
-  };
-}
-
-function sumK(arr, key) {
-  return arr.reduce((a, r) => a + (Number(r[key]) || 0), 0);
-}
-
-function aggregate(rows) {
-  const leads = sumK(rows, "leads");
-  const booked = sumK(rows, "booked");
-  const canceled = sumK(rows, "canceled");
-  const completed = sumK(rows, "completed");
-  const revenue = sumK(rows, "revenue");
-
-  return {
-    leads,
-    booked,
-    canceled,
-    completed,
-    revenue,
-    bookingRate: leads ? booked / leads : 0,
-    cancelRate: (canceled + completed) ? canceled / (canceled + completed) : 0,
-    conversionRate: leads ? completed / leads : 0,
-    aov: completed ? revenue / completed : 0
   };
 }
 
@@ -665,7 +655,7 @@ function shouldUseFullDataset(question) {
   return broadTerms.some(term => q.includes(term));
 }
 
-function buildChannelShareSeries(rows, period, metricKey) {
+function buildGroupedShareSeries(rows, period, metricKey, groupKey) {
   const timeKey = r =>
     period === "day"
       ? (r.date || "").slice(0, 10)
@@ -673,20 +663,26 @@ function buildChannelShareSeries(rows, period, metricKey) {
       ? (r.Week || "").slice(0, 10)
       : (r.Month || "").slice(0, 7);
 
-  const allKeys = [...new Set(rows.map(timeKey).filter(Boolean))].sort().slice(period === "day" ? -60 : -12);
-  const channels = [...new Set(rows.map(r => r.cat).filter(Boolean))].sort();
+  const allKeys = [...new Set(rows.map(timeKey).filter(Boolean))]
+    .sort()
+    .slice(period === "day" ? -60 : -12);
+
+  const groups = [...new Set(rows.map(r => r[groupKey]).filter(Boolean))].sort();
   const rawMap = {};
 
   allKeys.forEach(t => {
     rawMap[t] = {};
-    channels.forEach(c => {
-      rawMap[t][c] = [];
+    groups.forEach(g => {
+      rawMap[t][g] = [];
     });
   });
 
   rows.forEach(r => {
     const t = timeKey(r);
-    if (rawMap[t] && r.cat && rawMap[t][r.cat]) rawMap[t][r.cat].push(r);
+    const g = r[groupKey];
+    if (t && g && rawMap[t] && rawMap[t][g]) {
+      rawMap[t][g].push(r);
+    }
   });
 
   const series = allKeys.map(t => {
@@ -694,17 +690,17 @@ function buildChannelShareSeries(rows, period, metricKey) {
     const totalRows = Object.values(rawMap[t]).flat();
     const totalAgg = aggregate(totalRows);
 
-    channels.forEach(c => {
-      const cRows = rawMap[t][c] || [];
-      const cAgg = aggregate(cRows);
+    groups.forEach(g => {
+      const gRows = rawMap[t][g] || [];
+      const gAgg = aggregate(gRows);
       const totalVal = totalAgg[metricKey] || 0;
-      point[c] = totalVal > 0 ? (cAgg[metricKey] / totalVal) * 100 : 0;
+      point[g] = totalVal > 0 ? (gAgg[metricKey] / totalVal) * 100 : 0;
     });
 
     return point;
   });
 
-  return { series, channels };
+  return { series, groups };
 }
 
 function fmtLabel(label, period) {
@@ -998,7 +994,35 @@ function Sparkline({ data, metricKey, color, pacing }) {
   );
 }
 
-function MultiLineShareChart({ data, channels, period }) {
+function getSeriesColor(label, dimension) {
+  if (dimension === "channel") {
+    return CAT_COLORS[label] || "#94a3b8";
+  }
+
+  const palette = [
+    "#2563eb",
+    "#7c3aed",
+    "#0ea5e9",
+    "#10b981",
+    "#f59e0b",
+    "#ef4444",
+    "#14b8a6",
+    "#8b5cf6",
+    "#f97316",
+    "#64748b",
+    "#e11d48",
+    "#22c55e"
+  ];
+
+  let hash = 0;
+  const s = String(label || "");
+  for (let i = 0; i < s.length; i++) {
+    hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  }
+  return palette[hash % palette.length];
+}
+
+function MultiLineShareChart({ data, groups, period, dimension = "channel" }) {
   if (!data.length) return null;
 
   const W = 680;
@@ -1013,7 +1037,7 @@ function MultiLineShareChart({ data, channels, period }) {
   const xP = i => pL + (n > 1 ? i / (n - 1) : 0.5) * cW;
   const yP = v => pT + cH - (Math.min(Math.max(v, 0), 100) / 100) * cH;
   const step = Math.ceil(n / 10);
-  const active = channels.filter(c => data.some(d => (d[c] || 0) > 0));
+  const active = groups.filter(g => data.some(d => (d[g] || 0) > 0));
 
   return React.createElement(
     "svg",
@@ -1021,12 +1045,12 @@ function MultiLineShareChart({ data, channels, period }) {
     React.createElement(
       "defs",
       null,
-      active.map(c =>
+      active.map(g =>
         React.createElement(
           "linearGradient",
-          { key: "g_" + c, id: "sg_" + c, x1: "0", y1: "0", x2: "0", y2: "1" },
-          React.createElement("stop", { offset: "0%", stopColor: CAT_COLORS[c] || "#94a3b8", stopOpacity: "0.12" }),
-          React.createElement("stop", { offset: "100%", stopColor: CAT_COLORS[c] || "#94a3b8", stopOpacity: "0.01" })
+          { key: "g_" + g, id: "sg_" + g, x1: "0", y1: "0", x2: "0", y2: "1" },
+          React.createElement("stop", { offset: "0%", stopColor: getSeriesColor(g, dimension), stopOpacity: "0.12" }),
+          React.createElement("stop", { offset: "100%", stopColor: getSeriesColor(g, dimension), stopOpacity: "0.01" })
         )
       )
     ),
@@ -1039,15 +1063,15 @@ function MultiLineShareChart({ data, channels, period }) {
         React.createElement("text", { x: pL - 5, y: y + 4, textAnchor: "end", fontSize: "9", fill: "#9ca3af" }, t + "%")
       );
     }),
-    active.map(c => {
-      const color = CAT_COLORS[c] || "#94a3b8";
-      const pts = data.map((d, i) => xP(i).toFixed(1) + "," + yP(d[c] || 0).toFixed(1)).join(" ");
+    active.map(g => {
+      const color = getSeriesColor(g, dimension);
+      const pts = data.map((d, i) => xP(i).toFixed(1) + "," + yP(d[g] || 0).toFixed(1)).join(" ");
       return React.createElement(
         "g",
-        { key: c },
+        { key: g },
         React.createElement("polygon", {
           points: xP(0).toFixed(1) + "," + (pT + cH) + " " + pts + " " + xP(n - 1).toFixed(1) + "," + (pT + cH),
-          fill: `url(#sg_${c})`
+          fill: `url(#sg_${g})`
         }),
         React.createElement("polyline", {
           points: pts,
@@ -1059,14 +1083,14 @@ function MultiLineShareChart({ data, channels, period }) {
         })
       );
     }),
-    active.map(c =>
+    active.map(g =>
       data.map((d, i) =>
         React.createElement("circle", {
-          key: c + "_" + i,
+          key: g + "_" + i,
           cx: xP(i),
-          cy: yP(d[c] || 0),
+          cy: yP(d[g] || 0),
           r: 2.5,
-          fill: CAT_COLORS[c] || "#94a3b8",
+          fill: getSeriesColor(g, dimension),
           stroke: "#fff",
           strokeWidth: "1"
         })
@@ -3360,6 +3384,7 @@ function Dashboard() {
   const [trendKey, setTrendKey] = useState("revenue");
   const [chartType, setChartType] = useState("line");
   const [trendView, setTrendView] = useState("absolute");
+  const [shareDimension, setShareDimension] = useState("channel");
   const [chatOpen, setChatOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [targetData, setTargetData] = useState(TARGET_DATA);
@@ -3410,9 +3435,17 @@ function Dashboard() {
 
   const series = useMemo(() => buildTimeSeries(filtered, period), [filtered, period]);
 
+  const shareRows =
+    market === "All Markets" && chanCat === "All Channels" ? rawData : filtered;
+
   const channelShareData = useMemo(
-    () => buildChannelShareSeries(market === "All Markets" && chanCat === "All Channels" ? rawData : filtered, period, trendKey),
-    [rawData, filtered, market, chanCat, period, trendKey]
+    () => buildGroupedShareSeries(shareRows, period, trendKey, "cat"),
+    [shareRows, period, trendKey]
+  );
+
+  const marketShareData = useMemo(
+    () => buildGroupedShareSeries(shareRows, period, trendKey, "market"),
+    [shareRows, period, trendKey]
   );
 
   const getRowsForLabel = useCallback(
@@ -3448,8 +3481,18 @@ function Dashboard() {
   const isRateOrAov = key => key.includes("Rate") || key === "aov";
   const selMetric = METRICS.find(m => m.key === trendKey) || METRICS[0];
   const shareBlocked = SHARE_INCOMPATIBLE.has(trendKey);
-  const activeChannels = channelShareData.channels.filter(c => channelShareData.series.some(d => (d[c] || 0) > 0));
   const selectedMetricPacing = pacingByMetric[trendKey] || null;
+
+  const activeChannels = channelShareData.groups.filter(c =>
+    channelShareData.series.some(d => (d[c] || 0) > 0)
+  );
+
+  const activeMarkets = marketShareData.groups.filter(m =>
+    marketShareData.series.some(d => (d[m] || 0) > 0)
+  );
+
+  const activeShareData = shareDimension === "market" ? marketShareData : channelShareData;
+  const activeShareGroups = shareDimension === "market" ? activeMarkets : activeChannels;
 
   const overviewLabel = useMemo(() => {
     if (!series.length) return "";
@@ -3792,7 +3835,7 @@ function Dashboard() {
               React.createElement(
                 "div",
                 { style: { display: "flex", gap: 4, background: shareBlocked ? "#f8fafc" : "#f1f5f9", borderRadius: 8, padding: 3, opacity: shareBlocked ? 0.5 : 1 } },
-                [["absolute", "Absolute"], ["share", "% Share by Channel"]].map(([v, lbl]) =>
+                [["absolute", "Absolute"], ["share", "% Share"]].map(([v, lbl]) =>
                   React.createElement(
                     "button",
                     {
@@ -3818,6 +3861,34 @@ function Dashboard() {
                   )
                 )
               ),
+              trendView === "share" && !shareBlocked
+                ? React.createElement(
+                    "div",
+                    { style: { display: "flex", gap: 4, background: "#f1f5f9", borderRadius: 8, padding: 3 } },
+                    [["channel", "By Channel"], ["market", "By Market"]].map(([v, lbl]) =>
+                      React.createElement(
+                        "button",
+                        {
+                          key: v,
+                          onClick: () => setShareDimension(v),
+                          style: {
+                            padding: "5px 14px",
+                            borderRadius: 6,
+                            border: "none",
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            background: shareDimension === v ? "#fff" : "transparent",
+                            color: shareDimension === v ? "#111827" : "#9ca3af",
+                            boxShadow: shareDimension === v ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                            whiteSpace: "nowrap"
+                          }
+                        },
+                        lbl
+                      )
+                    )
+                  )
+                : null,
               shareBlocked
                 ? React.createElement(
                     "span",
@@ -3880,29 +3951,46 @@ function Dashboard() {
                     React.createElement(
                       "div",
                       null,
-                      React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 2 } }, selMetric.label + " — % Share by Channel"),
+                      React.createElement(
+                        "div",
+                        { style: { fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 2 } },
+                        selMetric.label + " — % Share by " + (shareDimension === "market" ? "Market" : "Channel")
+                      ),
                       React.createElement("div", { style: { fontSize: 11, color: "#9ca3af" } }, periodLabel + " · " + market)
                     ),
                     React.createElement(
                       "div",
                       { style: { display: "flex", flexWrap: "wrap", gap: 10 } },
-                      activeChannels.map(c =>
+                      activeShareGroups.map(g =>
                         React.createElement(
                           "span",
-                          { key: c, style: { display: "flex", alignItems: "center", gap: 5, fontSize: 12 } },
-                          React.createElement("span", { style: { width: 24, height: 3, borderRadius: 2, background: CAT_COLORS[c] || "#94a3b8", display: "inline-block" } }),
-                          React.createElement("span", { style: { color: "#374151", fontWeight: 600 } }, c)
+                          { key: g, style: { display: "flex", alignItems: "center", gap: 5, fontSize: 12 } },
+                          React.createElement("span", {
+                            style: {
+                              width: 24,
+                              height: 3,
+                              borderRadius: 2,
+                              background: getSeriesColor(g, shareDimension),
+                              display: "inline-block"
+                            }
+                          }),
+                          React.createElement("span", { style: { color: "#374151", fontWeight: 600 } }, g)
                         )
                       )
                     )
                   ),
-                  React.createElement(MultiLineShareChart, { data: channelShareData.series, channels: channelShareData.channels, period }),
-                  activeChannels.length > 0
+                  React.createElement(MultiLineShareChart, {
+                    data: activeShareData.series,
+                    groups: activeShareData.groups,
+                    period,
+                    dimension: shareDimension
+                  }),
+                  activeShareGroups.length > 0
                     ? React.createElement(
                         "div",
                         { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))", gap: 8, marginTop: 16 } },
-                        activeChannels.map(c => {
-                          const vals = channelShareData.series.map(d => d[c] || 0);
+                        activeShareGroups.map(g => {
+                          const vals = activeShareData.series.map(d => d[g] || 0);
                           const latest = vals.length ? vals[vals.length - 1] : 0;
                           const prev2 = vals.length > 1 ? vals[vals.length - 2] : 0;
                           const chg = prev2 ? ((latest - prev2) / prev2) * 100 : 0;
@@ -3910,15 +3998,29 @@ function Dashboard() {
 
                           return React.createElement(
                             "div",
-                            { key: c, style: { background: "#f8fafc", borderRadius: 10, padding: "10px 12px", border: "1px solid #f1f5f9" } },
+                            { key: g, style: { background: "#f8fafc", borderRadius: 10, padding: "10px 12px", border: "1px solid #f1f5f9" } },
                             React.createElement(
                               "div",
                               { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
-                              React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", background: CAT_COLORS[c] || "#94a3b8" } }),
-                              React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: "#6b7280" } }, c)
+                              React.createElement("div", {
+                                style: {
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: "50%",
+                                  background: getSeriesColor(g, shareDimension)
+                                }
+                              }),
+                              React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: "#6b7280" } }, g)
                             ),
                             React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: "#111827" } }, latest.toFixed(1) + "%"),
-                            React.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: good ? "#10b981" : "#f43f5e", marginTop: 2 } }, (good ? "▲" : "▼") + Math.abs(chg).toFixed(1) + "% vs prior")
+                            React.createElement("div", {
+                              style: {
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: good ? "#10b981" : "#f43f5e",
+                                marginTop: 2
+                              }
+                            }, (good ? "▲" : "▼") + Math.abs(chg).toFixed(1) + "% vs prior")
                           );
                         })
                       )
