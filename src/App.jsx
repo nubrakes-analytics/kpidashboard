@@ -1025,6 +1025,8 @@ function getSeriesColor(label, dimension) {
 function MultiLineShareChart({ data, groups, period, dimension = "channel" }) {
   if (!data.length) return null;
 
+  const maxShare = dimension === "market" ? 50 : 100;
+
   const W = 680;
   const H = 230;
   const pL = 44;
@@ -1035,9 +1037,10 @@ function MultiLineShareChart({ data, groups, period, dimension = "channel" }) {
   const cH = H - pB - pT;
   const n = data.length;
   const xP = i => pL + (n > 1 ? i / (n - 1) : 0.5) * cW;
-  const yP = v => pT + cH - (Math.min(Math.max(v, 0), 100) / 100) * cH;
+  const yP = v => pT + cH - (Math.min(Math.max(v, 0), maxShare) / maxShare) * cH;
   const step = Math.ceil(n / 10);
   const active = groups.filter(g => data.some(d => (d[g] || 0) > 0));
+  const ticks = dimension === "market" ? [0, 10, 20, 30, 40, 50] : [0, 25, 50, 75, 100];
 
   return React.createElement(
     "svg",
@@ -1049,28 +1052,65 @@ function MultiLineShareChart({ data, groups, period, dimension = "channel" }) {
         React.createElement(
           "linearGradient",
           { key: "g_" + g, id: "sg_" + g, x1: "0", y1: "0", x2: "0", y2: "1" },
-          React.createElement("stop", { offset: "0%", stopColor: getSeriesColor(g, dimension), stopOpacity: "0.12" }),
-          React.createElement("stop", { offset: "100%", stopColor: getSeriesColor(g, dimension), stopOpacity: "0.01" })
+          React.createElement("stop", {
+            offset: "0%",
+            stopColor: getSeriesColor(g, dimension),
+            stopOpacity: "0.12"
+          }),
+          React.createElement("stop", {
+            offset: "100%",
+            stopColor: getSeriesColor(g, dimension),
+            stopOpacity: "0.01"
+          })
         )
       )
     ),
-    [0, 25, 50, 75, 100].map(t => {
-      const y = pT + cH * (1 - t / 100);
+    ticks.map(t => {
+      const y = pT + cH * (1 - t / maxShare);
       return React.createElement(
         "g",
         { key: t },
-        React.createElement("line", { x1: pL, x2: W - pR, y1: y, y2: y, stroke: "#e5e7eb", strokeWidth: "1" }),
-        React.createElement("text", { x: pL - 5, y: y + 4, textAnchor: "end", fontSize: "9", fill: "#9ca3af" }, t + "%")
+        React.createElement("line", {
+          x1: pL,
+          x2: W - pR,
+          y1: y,
+          y2: y,
+          stroke: "#e5e7eb",
+          strokeWidth: "1"
+        }),
+        React.createElement(
+          "text",
+          {
+            x: pL - 5,
+            y: y + 4,
+            textAnchor: "end",
+            fontSize: "9",
+            fill: "#9ca3af"
+          },
+          t + "%"
+        )
       );
     }),
     active.map(g => {
       const color = getSeriesColor(g, dimension);
-      const pts = data.map((d, i) => xP(i).toFixed(1) + "," + yP(d[g] || 0).toFixed(1)).join(" ");
+      const pts = data
+        .map((d, i) => xP(i).toFixed(1) + "," + yP(d[g] || 0).toFixed(1))
+        .join(" ");
+
       return React.createElement(
         "g",
         { key: g },
         React.createElement("polygon", {
-          points: xP(0).toFixed(1) + "," + (pT + cH) + " " + pts + " " + xP(n - 1).toFixed(1) + "," + (pT + cH),
+          points:
+            xP(0).toFixed(1) +
+            "," +
+            (pT + cH) +
+            " " +
+            pts +
+            " " +
+            xP(n - 1).toFixed(1) +
+            "," +
+            (pT + cH),
           fill: `url(#sg_${g})`
         }),
         React.createElement("polyline", {
@@ -1098,7 +1138,18 @@ function MultiLineShareChart({ data, groups, period, dimension = "channel" }) {
     ),
     data.map((d, i) =>
       i % step === 0
-        ? React.createElement("text", { key: i, x: xP(i), y: H - 4, textAnchor: "middle", fontSize: "9", fill: "#9ca3af" }, fmtLabel(d.label, period))
+        ? React.createElement(
+            "text",
+            {
+              key: i,
+              x: xP(i),
+              y: H - 4,
+              textAnchor: "middle",
+              fontSize: "9",
+              fill: "#9ca3af"
+            },
+            fmtLabel(d.label, period)
+          )
         : null
     )
   );
