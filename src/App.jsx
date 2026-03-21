@@ -242,18 +242,149 @@ async function callAPI(messages) {
 }
 
 function useViewport() {
-  const getWidth = () => (typeof window !== "undefined" ? window.innerWidth : 1280);
-  const [width, setWidth] = useState(getWidth());
+  const getState = () => {
+    if (typeof window === "undefined") {
+      return {
+        width: 1280,
+        height: 800,
+        isPhone: false,
+        isTablet: false,
+        isDesktop: true
+      };
+    }
+
+    const vv = window.visualViewport;
+    const width = Math.round(vv?.width || window.innerWidth || 1280);
+    const height = Math.round(vv?.height || window.innerHeight || 800);
+
+    return {
+      width,
+      height,
+      isPhone: width < 640,
+      isTablet: width >= 640 && width < 1024,
+      isDesktop: width >= 1024
+    };
+  };
+
+  const [state, setState] = useState(getState);
 
   useEffect(() => {
-    const onResize = () => setWidth(getWidth());
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const update = () => setState(getState());
+
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
+
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
+    };
   }, []);
 
+  return state;
+}
+
+function useLockBodyScroll(active) {
+  useEffect(() => {
+    if (!active || typeof document === "undefined") return;
+
+    const originalOverflow = document.body.style.overflow;
+    const originalTouchAction = document.body.style.touchAction;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.touchAction = originalTouchAction;
+    };
+  }, [active]);
+}
+
+function getOverlayShellStyle({ isPhone, isTablet }) {
+  if (isPhone) {
+    return {
+      position: "fixed",
+      inset: 0,
+      zIndex: 1100,
+      display: "flex",
+      alignItems: "stretch",
+      justifyContent: "stretch"
+    };
+  }
+
+  if (isTablet) {
+    return {
+      position: "fixed",
+      inset: 0,
+      zIndex: 1100,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20
+    };
+  }
+
   return {
-    isPhone: width < 640,
-    isTablet: width >= 640 && width < 1024
+    position: "fixed",
+    right: 20,
+    bottom: 88,
+    width: 420,
+    maxWidth: "min(420px, calc(100vw - 32px))",
+    zIndex: 1100,
+    animation: "slideUp 0.22s ease"
+  };
+}
+
+function getOverlayCardStyle({ isPhone, isTablet, maxWidth = 430 }) {
+  if (isPhone) {
+    return {
+      width: "100%",
+      height: "100%",
+      background: "#fff",
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+      borderRadius: 0
+    };
+  }
+
+  if (isTablet) {
+    return {
+      width: "100%",
+      maxWidth,
+      height: "min(88vh, 760px)",
+      background: "#fff",
+      borderRadius: 20,
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+      border: "1px solid #e5e7eb",
+      boxShadow: "0 16px 50px rgba(0,0,0,0.18)"
+    };
+  }
+
+  return {
+    background: "#fff",
+    borderRadius: 18,
+    boxShadow: "0 10px 40px rgba(0,0,0,0.18)",
+    border: "1px solid #e5e7eb",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    maxHeight: "74vh"
+  };
+}
+
+function getBackdropStyle() {
+  return {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15, 23, 42, 0.38)",
+    backdropFilter: "blur(3px)"
   };
 }
 
@@ -1427,22 +1558,34 @@ function ComparisonChart({ curr, prev, period, pacingByMetric }) {
 }
 
 function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
+  const { isPhone, isTablet } = useViewport();
   const [chatHistory, setChatHistory] = useState([]);
   const [userQuestion, setUserQuestion] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
+  useLockBodyScroll(open && (isPhone || isTablet));
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onKey = e => {
+      if (e.key === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   useEffect(() => {
     if (open && inputRef.current) {
-      setTimeout(() => inputRef.current && inputRef.current.focus(), 120);
+      setTimeout(() => inputRef.current?.focus(), 150);
     }
   }, [open]);
 
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, aiLoading]);
 
   const sendMessage = useCallback((question) => {
@@ -1520,88 +1663,123 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
             .join("");
 
         setChatHistory(h => [...h, { role: "assistant", text: t || "No response." }]);
-        setAiLoading(false);
       })
       .catch(err => {
         console.error(err);
         setChatHistory(h => [...h, { role: "assistant", text: `Error: ${err.message}` }]);
+      })
+      .finally(() => {
         setAiLoading(false);
       });
   }, [aiLoading, rawData, period, market, chanCat]);
 
   if (!open) return null;
 
+  const shellStyle = getOverlayShellStyle({ isPhone, isTablet });
+  const cardStyle = getOverlayCardStyle({ isPhone, isTablet, maxWidth: 460 });
+  const compact = isPhone;
+  const examples = compact
+    ? ["Top market?", "Revenue trend?", "Best conversion channel?"]
+    : ["What's the top performing market?", "How is revenue trending?", "Which channel has the best conversion rate?"];
+
   return React.createElement(
     "div",
-    {
-      style: {
-        position: "fixed",
-        bottom: 88,
-        right: 20,
-        width: 360,
-        maxWidth: "calc(100vw - 40px)",
-        zIndex: 1000,
-        animation: "slideUp 0.22s ease"
-      }
-    },
+    { style: shellStyle },
+    (isPhone || isTablet) ? React.createElement("div", { style: getBackdropStyle(), onClick: onClose }) : null,
     React.createElement(
       "div",
       {
         style: {
-          background: "#fff",
-          borderRadius: 16,
-          boxShadow: "0 8px 40px rgba(0,0,0,0.18)",
-          border: "1px solid #e5e7eb",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          maxHeight: "70vh"
+          ...cardStyle,
+          position: isPhone || isTablet ? "relative" : "static",
+          marginLeft: isPhone || isTablet ? "auto" : 0,
+          marginTop: isPhone || isTablet ? "auto" : 0
         }
       },
       React.createElement(
         "div",
         {
           style: {
-            padding: "12px 16px",
+            padding: compact ? "12px 14px" : "12px 16px",
             background: "#111827",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            gap: 8,
             flexShrink: 0
           }
         },
         React.createElement(
           "div",
-          { style: { display: "flex", alignItems: "center", gap: 8 } },
-          React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", background: "#10b981" } }),
-          React.createElement("span", { style: { fontSize: 13, fontWeight: 700, color: "#fff" } }, "AI Insights"),
-          React.createElement("span", { style: { fontSize: 11, color: "#9ca3af", marginLeft: 2 } }, `${period} · ${market} · ${chanCat}`)
+          { style: { display: "flex", alignItems: "center", gap: 8, minWidth: 0 } },
+          React.createElement("div", {
+            style: { width: 8, height: 8, borderRadius: "50%", background: "#10b981", flexShrink: 0 }
+          }),
+          React.createElement(
+            "div",
+            { style: { minWidth: 0 } },
+            React.createElement("div", {
+              style: {
+                fontSize: compact ? 14 : 13,
+                fontWeight: 700,
+                color: "#fff",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis"
+              }
+            }, "AI Insights"),
+            React.createElement("div", {
+              style: {
+                fontSize: 11,
+                color: "#9ca3af",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis"
+              }
+            }, `${period} · ${market} · ${chanCat}`)
+          )
         ),
         React.createElement(
           "div",
-          { style: { display: "flex", gap: 6, alignItems: "center" } },
+          { style: { display: "flex", gap: 6, alignItems: "center", flexShrink: 0 } },
           chatHistory.length > 0
-            ? React.createElement("button", {
-                onClick: () => setChatHistory([]),
-                style: { background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#9ca3af", padding: "2px 6px", borderRadius: 4 }
-              }, "Clear")
+            ? React.createElement(
+                "button",
+                {
+                  onClick: () => setChatHistory([]),
+                  style: {
+                    background: "rgba(255,255,255,0.1)",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    color: "#fff",
+                    padding: "5px 8px",
+                    borderRadius: 8
+                  }
+                },
+                "Clear"
+              )
             : null,
-          React.createElement("button", {
-            onClick: onClose,
-            style: {
-              background: "rgba(255,255,255,0.1)",
-              border: "none",
-              borderRadius: 6,
-              cursor: "pointer",
-              color: "#fff",
-              fontSize: 16,
-              width: 24,
-              height: 24,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center"
-            }
-          }, "×")
+          React.createElement(
+            "button",
+            {
+              onClick: onClose,
+              style: {
+                background: "rgba(255,255,255,0.1)",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                color: "#fff",
+                fontSize: 16,
+                width: 28,
+                height: 28,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }
+            },
+            "×"
+          )
         )
       ),
       React.createElement(
@@ -1610,37 +1788,54 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
           style: {
             flex: 1,
             overflowY: "auto",
-            padding: "12px 14px",
+            padding: compact ? "10px 12px" : "12px 14px",
             display: "flex",
             flexDirection: "column",
             gap: 10,
-            minHeight: 160
+            minHeight: compact ? 0 : 180,
+            background: "#fcfcfd"
           }
         },
         chatHistory.length === 0
           ? React.createElement(
               "div",
-              { style: { display: "flex", flexDirection: "column", gap: 8, marginTop: 8 } },
-              React.createElement("p", { style: { fontSize: 12, color: "#9ca3af", margin: 0, textAlign: "center", marginBottom: 4 } }, "Ask anything about your current dashboard scope"),
-              ["What's the top performing market?", "How is revenue trending?", "Which channel has the best conversion rate?"].map(q =>
-                React.createElement("button", {
-                  key: q,
-                  onClick: () => {
-                    setUserQuestion("");
-                    sendMessage(q);
-                  },
+              { style: { display: "flex", flexDirection: "column", gap: 8, marginTop: compact ? 0 : 8 } },
+              React.createElement(
+                "p",
+                {
                   style: {
-                    background: "#f8fafc",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 8,
-                    padding: "7px 12px",
                     fontSize: 12,
-                    color: "#374151",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    lineHeight: 1.4
+                    color: "#9ca3af",
+                    margin: 0,
+                    textAlign: "center",
+                    marginBottom: 4
                   }
-                }, q)
+                },
+                "Ask anything about your current dashboard scope"
+              ),
+              examples.map(q =>
+                React.createElement(
+                  "button",
+                  {
+                    key: q,
+                    onClick: () => {
+                      setUserQuestion("");
+                      sendMessage(q);
+                    },
+                    style: {
+                      background: "#fff",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 10,
+                      padding: compact ? "9px 11px" : "8px 12px",
+                      fontSize: 12,
+                      color: "#374151",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      lineHeight: 1.4
+                    }
+                  },
+                  q
+                )
               )
             )
           : null,
@@ -1648,21 +1843,27 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
           const isUser = msg.role === "user";
           return React.createElement(
             "div",
-            { key: i, style: { display: "flex", justifyContent: isUser ? "flex-end" : "flex-start" } },
+            {
+              key: i,
+              style: {
+                display: "flex",
+                justifyContent: isUser ? "flex-end" : "flex-start"
+              }
+            },
             React.createElement(
               "div",
               {
                 style: {
-                  maxWidth: "88%",
-                  padding: "8px 12px",
-                  borderRadius: 12,
+                  maxWidth: compact ? "92%" : "88%",
+                  padding: compact ? "9px 11px" : "8px 12px",
+                  borderRadius: 14,
                   fontSize: 12,
                   lineHeight: 1.65,
                   whiteSpace: "pre-wrap",
                   background: isUser ? "#6366f1" : "#f1f5f9",
                   color: isUser ? "#fff" : "#374151",
-                  borderBottomRightRadius: isUser ? 2 : 12,
-                  borderBottomLeftRadius: isUser ? 12 : 2
+                  borderBottomRightRadius: isUser ? 4 : 14,
+                  borderBottomLeftRadius: isUser ? 14 : 4
                 }
               },
               msg.text
@@ -1707,12 +1908,13 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
         "div",
         {
           style: {
-            padding: "10px 12px",
+            padding: compact ? "10px 12px calc(10px + env(safe-area-inset-bottom))" : "10px 12px",
             borderTop: "1px solid #f1f5f9",
             flexShrink: 0,
             display: "flex",
             gap: 8,
-            background: "#fff"
+            background: "#fff",
+            flexDirection: compact ? "column" : "row"
           }
         },
         React.createElement("input", {
@@ -1730,10 +1932,11 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
           placeholder: "Ask a question...",
           style: {
             flex: 1,
-            padding: "8px 12px",
-            borderRadius: 8,
+            width: "100%",
+            padding: compact ? "11px 12px" : "9px 12px",
+            borderRadius: 10,
             border: "1.5px solid #e5e7eb",
-            fontSize: 12,
+            fontSize: 13,
             color: "#374151",
             outline: "none",
             background: "#f8fafc"
@@ -1751,8 +1954,8 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
             },
             disabled: aiLoading || !userQuestion.trim(),
             style: {
-              padding: "8px 12px",
-              borderRadius: 8,
+              padding: compact ? "11px 14px" : "8px 12px",
+              borderRadius: 10,
               border: "none",
               background: "#6366f1",
               color: "#fff",
@@ -1760,24 +1963,11 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
               fontWeight: 600,
               cursor: "pointer",
               opacity: aiLoading || !userQuestion.trim() ? 0.45 : 1,
-              flexShrink: 0
+              flexShrink: 0,
+              width: compact ? "100%" : "auto"
             }
           },
-          React.createElement(
-            "svg",
-            {
-              width: 14,
-              height: 14,
-              viewBox: "0 0 24 24",
-              fill: "none",
-              stroke: "currentColor",
-              strokeWidth: "2.5",
-              strokeLinecap: "round",
-              strokeLinejoin: "round"
-            },
-            React.createElement("line", { x1: "22", y1: "2", x2: "11", y2: "13" }),
-            React.createElement("polygon", { points: "22 2 15 22 11 13 2 9 22 2" })
-          )
+          "Send"
         )
       )
     )
@@ -1785,6 +1975,7 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
 }
 
 function CopilotOverlay({ open, onClose }) {
+  const { isPhone, isTablet } = useViewport();
   const [messages, setMessages] = useState(() => {
     if (typeof window === "undefined") {
       return [
@@ -1835,6 +2026,19 @@ function CopilotOverlay({ open, onClose }) {
   const inputRef = useRef(null);
   const askAbortRef = useRef(null);
 
+  useLockBodyScroll(open && (isPhone || isTablet));
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onKey = e => {
+      if (e.key === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   useEffect(() => {
     if (!open) return;
     try {
@@ -1877,7 +2081,7 @@ function CopilotOverlay({ open, onClose }) {
 
   useEffect(() => {
     if (!open) return;
-    setTimeout(() => inputRef.current?.focus(), 120);
+    setTimeout(() => inputRef.current?.focus(), 150);
   }, [open]);
 
   useEffect(() => {
@@ -1904,9 +2108,7 @@ function CopilotOverlay({ open, onClose }) {
     try {
       const res = await fetch(COPILOT_AI_ENDPOINT, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
         signal: controller.signal
       });
@@ -1972,38 +2174,58 @@ function CopilotOverlay({ open, onClose }) {
 
   if (!open) return null;
 
-  return React.createElement(
-    "div",
-    {
-      style: {
+  const shellStyle = isPhone
+    ? {
+        position: "fixed",
+        inset: 0,
+        zIndex: 1200,
+        display: "flex"
+      }
+    : isTablet
+    ? {
+        position: "fixed",
+        inset: 0,
+        zIndex: 1200,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 20
+      }
+    : {
         position: "fixed",
         bottom: 88,
         right: 84,
         width: 430,
-        maxWidth: "calc(100vw - 40px)",
-        zIndex: 1000,
+        maxWidth: "min(430px, calc(100vw - 32px))",
+        zIndex: 1200,
         animation: "slideUp 0.22s ease"
-      }
-    },
+      };
+
+  const cardStyle = getOverlayCardStyle({ isPhone, isTablet, maxWidth: 460 });
+  const compact = isPhone;
+  const exampleButtons = compact ? COPILOT_EXAMPLES.slice(0, 3) : COPILOT_EXAMPLES.slice(0, 4);
+
+  return React.createElement(
+    "div",
+    { style: shellStyle },
+    (isPhone || isTablet) ? React.createElement("div", { style: getBackdropStyle(), onClick: onClose }) : null,
     React.createElement(
       "div",
       {
         style: {
-          background: "#fff",
-          borderRadius: 18,
-          boxShadow: "0 10px 40px rgba(0,0,0,0.18)",
-          border: "1px solid #e5e7eb",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          maxHeight: "74vh"
+          ...cardStyle,
+          position: isPhone || isTablet ? "relative" : "static",
+          width: isPhone ? "100%" : cardStyle.width,
+          height: isPhone ? "100%" : cardStyle.height,
+          marginLeft: isPhone || isTablet ? "auto" : 0,
+          marginTop: isPhone || isTablet ? "auto" : 0
         }
       },
       React.createElement(
         "div",
         {
           style: {
-            padding: "12px 16px",
+            padding: compact ? "12px 14px" : "12px 16px",
             background: "#0E2468",
             display: "flex",
             alignItems: "center",
@@ -2025,12 +2247,12 @@ function CopilotOverlay({ open, onClose }) {
             src: "/nubrakes-ai-copilot.svg",
             alt: "NuBrakes AI Copilot",
             style: {
-              width: 34,
-              height: 34,
+              width: compact ? 30 : 34,
+              height: compact ? 30 : 34,
               objectFit: "contain",
               background: "#fff",
-padding: 4,
-borderRadius: 8,
+              padding: 4,
+              borderRadius: 8,
               flexShrink: 0
             }
           }),
@@ -2041,7 +2263,7 @@ borderRadius: 8,
               "div",
               {
                 style: {
-                  fontSize: 13,
+                  fontSize: compact ? 14 : 13,
                   fontWeight: 700,
                   color: "#fff",
                   whiteSpace: "nowrap",
@@ -2068,7 +2290,7 @@ borderRadius: 8,
         ),
         React.createElement(
           "div",
-          { style: { display: "flex", gap: 6, alignItems: "center" } },
+          { style: { display: "flex", gap: 6, alignItems: "center", flexShrink: 0 } },
           React.createElement(
             "button",
             {
@@ -2080,7 +2302,7 @@ borderRadius: 8,
                 cursor: "pointer",
                 color: "#fff",
                 fontSize: 11,
-                padding: "4px 8px"
+                padding: "5px 8px"
               }
             },
             "Clear"
@@ -2096,8 +2318,8 @@ borderRadius: 8,
                 cursor: "pointer",
                 color: "#fff",
                 fontSize: 16,
-                width: 26,
-                height: 26,
+                width: 28,
+                height: 28,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center"
@@ -2111,7 +2333,7 @@ borderRadius: 8,
         "div",
         {
           style: {
-            padding: "10px 12px",
+            padding: compact ? "8px 10px" : "10px 12px",
             borderBottom: "1px solid #f1f5f9",
             background: "#f8fafc"
           }
@@ -2125,7 +2347,7 @@ borderRadius: 8,
               gap: 8
             }
           },
-          COPILOT_EXAMPLES.slice(0, 4).map(example =>
+          exampleButtons.map(example =>
             React.createElement(
               "button",
               {
@@ -2136,11 +2358,13 @@ borderRadius: 8,
                   background: "#fff",
                   border: "1px solid #e5e7eb",
                   borderRadius: 999,
-                  padding: "6px 10px",
+                  padding: compact ? "7px 10px" : "6px 10px",
                   fontSize: 11,
                   color: "#374151",
                   cursor: "pointer",
-                  opacity: loading ? 0.6 : 1
+                  opacity: loading ? 0.6 : 1,
+                  maxWidth: "100%",
+                  textAlign: "left"
                 }
               },
               example
@@ -2154,11 +2378,11 @@ borderRadius: 8,
           style: {
             flex: 1,
             overflowY: "auto",
-            padding: "12px",
+            padding: compact ? "10px" : "12px",
             display: "flex",
             flexDirection: "column",
             gap: 10,
-            minHeight: 220,
+            minHeight: compact ? 0 : 220,
             background: "#fcfcfd"
           }
         },
@@ -2205,9 +2429,9 @@ borderRadius: 8,
               "div",
               {
                 style: {
-                  maxWidth: "88%",
+                  maxWidth: compact ? "94%" : "88%",
                   borderRadius: 16,
-                  padding: "10px 12px",
+                  padding: compact ? "10px 11px" : "10px 12px",
                   background: isUser ? "#0E2468" : "#fff",
                   color: isUser ? "#fff" : "#0E2468",
                   border: isUser ? "none" : "1px solid #e5e7eb",
@@ -2411,7 +2635,7 @@ borderRadius: 8,
         {
           style: {
             borderTop: "1px solid #f1f5f9",
-            padding: "10px 12px",
+            padding: compact ? "10px 12px calc(10px + env(safe-area-inset-bottom))" : "10px 12px",
             background: "#fff"
           }
         },
@@ -2421,7 +2645,8 @@ borderRadius: 8,
             style: {
               display: "flex",
               gap: 8,
-              alignItems: "stretch"
+              alignItems: "stretch",
+              flexDirection: compact ? "column" : "row"
             }
           },
           React.createElement("textarea", {
@@ -2436,17 +2661,18 @@ borderRadius: 8,
               }
             },
             placeholder: "Ask about metrics, datasets, dashboards, or business drivers...",
-            rows: 2,
+            rows: compact ? 2 : 2,
             style: {
               flex: 1,
               resize: "none",
               borderRadius: 12,
               border: "1.5px solid #e5e7eb",
               padding: "10px 12px",
-              fontSize: 12,
+              fontSize: 13,
               color: "#374151",
               outline: "none",
-              background: "#f8fafc"
+              background: "#f8fafc",
+              width: "100%"
             }
           }),
           React.createElement(
@@ -2464,7 +2690,8 @@ borderRadius: 8,
                 fontWeight: 600,
                 cursor: "pointer",
                 opacity: loading || !input.trim() ? 0.5 : 1,
-                flexShrink: 0
+                flexShrink: 0,
+                width: compact ? "100%" : "auto"
               }
             },
             "Send"
@@ -2483,16 +2710,8 @@ borderRadius: 8,
               flexWrap: "wrap"
             }
           },
-          React.createElement(
-            "span",
-            null,
-            "Press Enter to send. Shift+Enter for new line."
-          ),
-          React.createElement(
-            "span",
-            null,
-            "Datasets: " + datasets.length
-          )
+          React.createElement("span", null, "Press Enter to send. Shift+Enter for new line."),
+          React.createElement("span", null, "Datasets: " + datasets.length)
         )
       )
     )
@@ -3335,6 +3554,24 @@ function Dashboard() {
         )
       : null;
 
+  const floatingBase = {
+    position: "fixed",
+    width: isPhone ? 50 : 52,
+    height: isPhone ? 50 : 52,
+    borderRadius: "50%",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: "0 4px 20px rgba(0,0,0,0.22)",
+    zIndex: 1001,
+    transition: "background 0.2s, transform 0.2s"
+  };
+
+  const safeBottom = isPhone ? "calc(16px + env(safe-area-inset-bottom))" : 20;
+  const primaryRight = isPhone ? 16 : 20;
+  const stackedOffset = isPhone ? 62 : 0;
+
   return React.createElement(
     "div",
     { style: containerStyle },
@@ -3715,23 +3952,19 @@ function Dashboard() {
     React.createElement(
       "button",
       {
-        onClick: () => setCopilotOpen(o => !o),
+        onClick: () => {
+          setCopilotOpen(o => {
+            const next = !o;
+            if (next && isPhone) setChatOpen(false);
+            return next;
+          });
+        },
         style: {
-          position: "fixed",
-          bottom: 20,
-          right: 84,
-          width: 52,
-          height: 52,
-          borderRadius: "50%",
+          ...floatingBase,
+          bottom: isPhone ? `calc(${safeBottom} + ${stackedOffset}px)` : 20,
+          right: isPhone ? primaryRight : 84,
           background: "#fff",
-border: "1px solid #e5e7eb",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.22)",
-          zIndex: 1001,
-          transition: "background 0.2s",
+          border: "1px solid #e5e7eb",
           overflow: "hidden",
           padding: 0
         }
@@ -3744,7 +3977,7 @@ border: "1px solid #e5e7eb",
               height: 18,
               viewBox: "0 0 24 24",
               fill: "none",
-              stroke: "#fff",
+              stroke: "#111827",
               strokeWidth: "2.5",
               strokeLinecap: "round"
             },
@@ -3766,23 +3999,19 @@ border: "1px solid #e5e7eb",
       "button",
       {
         className: "chat-bubble-btn",
-        onClick: () => setChatOpen(o => !o),
+        onClick: () => {
+          setChatOpen(o => {
+            const next = !o;
+            if (next && isPhone) setCopilotOpen(false);
+            return next;
+          });
+        },
         style: {
-          position: "fixed",
-          bottom: 20,
-          right: 20,
-          width: 52,
-          height: 52,
-          borderRadius: "50%",
+          ...floatingBase,
+          bottom: safeBottom,
+          right: primaryRight,
           background: chatOpen ? "#374151" : "#111827",
-          border: "none",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.22)",
-          zIndex: 1001,
-          transition: "background 0.2s"
+          border: "none"
         }
       },
       chatOpen
