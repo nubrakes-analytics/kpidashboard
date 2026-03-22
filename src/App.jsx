@@ -210,12 +210,17 @@ function buildProjectedActualByChannel(rows, period = "month") {
       revenue: calcHistoricalPacing(period, chRows, "revenue")
     };
 
+    const projectedLeads = getProjectedMetricValue("leads", agg.leads, pacingByMetric.leads);
+    const projectedCompleted = getProjectedMetricValue("completed", agg.completed, pacingByMetric.completed);
+    const projectedRevenue = getProjectedMetricValue("revenue", agg.revenue, pacingByMetric.revenue);
+    const projectedAov = projectedCompleted ? projectedRevenue / projectedCompleted : 0;
+
     out[ch] = {
       ...agg,
-      leads: getProjectedMetricValue("leads", agg.leads, pacingByMetric.leads),
-      completed: getProjectedMetricValue("completed", agg.completed, pacingByMetric.completed),
-      revenue: getProjectedMetricValue("revenue", agg.revenue, pacingByMetric.revenue),
-      aov: agg.aov
+      leads: projectedLeads,
+      completed: projectedCompleted,
+      revenue: projectedRevenue,
+      aov: projectedAov
     };
   });
 
@@ -226,12 +231,17 @@ function buildProjectedActualByChannel(rows, period = "month") {
     revenue: calcHistoricalPacing(period, rows, "revenue")
   };
 
+  const totalProjectedLeads = getProjectedMetricValue("leads", totalAgg.leads, totalPacing.leads);
+  const totalProjectedCompleted = getProjectedMetricValue("completed", totalAgg.completed, totalPacing.completed);
+  const totalProjectedRevenue = getProjectedMetricValue("revenue", totalAgg.revenue, totalPacing.revenue);
+  const totalProjectedAov = totalProjectedCompleted ? totalProjectedRevenue / totalProjectedCompleted : 0;
+
   out.Total = {
     ...totalAgg,
-    leads: getProjectedMetricValue("leads", totalAgg.leads, totalPacing.leads),
-    completed: getProjectedMetricValue("completed", totalAgg.completed, totalPacing.completed),
-    revenue: getProjectedMetricValue("revenue", totalAgg.revenue, totalPacing.revenue),
-    aov: totalAgg.aov
+    leads: totalProjectedLeads,
+    completed: totalProjectedCompleted,
+    revenue: totalProjectedRevenue,
+    aov: totalProjectedAov
   };
 
   return out;
