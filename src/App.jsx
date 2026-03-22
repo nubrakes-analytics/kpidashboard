@@ -18,7 +18,7 @@ const COPILOT_EXAMPLES = [
   "Which dataset should I use for supply and demand by market?",
   "Why is conversion rate down this March?",
   "What was the referral revenue in February 2026?",
-  "Why are completed jobs down?",
+  "Why are completed jobs up/down?",
   "Which markets are underperforming?",
   "What changed in lead mix this week?"
 ];
@@ -3685,7 +3685,7 @@ function Dashboard() {
       React.createElement(
         "div",
         { style: { marginBottom: 20 } },
-        React.createElement("h1", { style: { margin: 0, fontSize: isPhone ? 18 : 20, fontWeight: 700, color: "#111827" } }, "KPI Dashboard"),
+        React.createElement("h1", { style: { margin: 0, fontSize: isPhone ? 18 : 20, fontWeight: 700, color: "#111827" } }, "NuBrakes KPI Dashboard"),
         React.createElement(
           "p",
           { style: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" } },
