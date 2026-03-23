@@ -3785,20 +3785,7 @@ function Dashboard() {
                 marginBottom: 2
               }
             },
-            `Overview cards show projected % of Daily Avg Revenue pace`
-          ),
-          React.createElement(
-            "div",
-            {
-              style: {
-                fontSize: 11,
-                color: "#6b7280",
-                lineHeight: 1.45
-              }
-            },
-            defaultPacing.method === "historical"
-              ? `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% of a typical completed ${period}`
-              : `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% elapsed pacing fallback`
+            `Overview cards show projected`
           )
         ),
         React.createElement(
