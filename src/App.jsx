@@ -200,17 +200,162 @@ function aggregate(rows) {
   };
 }
 
-function buildProjectedActualByChannel(rows, period = "month") {
+function getSheetStyleDow(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  const jsDay = d.getDay();
+  return jsDay === 0 ? 1 : jsDay + 1;
+}
+
+function getAllDatesInMonth(monthKey) {
+  if (!monthKey) return [];
+
+  const [year, month] = monthKey.split("-").map(Number);
+  const days = new Date(year, month, 0).getDate();
+
+  return Array.from({ length: days }, (_, i) => {
+    const d = new Date(year, month - 1, i + 1, 12, 0, 0);
+    return {
+      dateKey: d.toISOString().slice(0, 10),
+      dow: d.getDay() === 0 ? 1 : d.getDay() + 1
+    };
+  });
+}
+
+function buildDailyRevenueSeries(rows) {
+  const grouped = {};
+
+  rows.forEach(r => {
+    const dateKey = (r.date || "").slice(0, 10);
+    if (!dateKey) return;
+    if (!grouped[dateKey]) grouped[dateKey] = [];
+    grouped[dateKey].push(r);
+  });
+
+  return Object.keys(grouped)
+    .sort()
+    .map(dateKey => {
+      const agg = aggregate(grouped[dateKey]);
+      return {
+        dateKey,
+        dow: getSheetStyleDow(dateKey),
+        value: Number(agg.revenue) || 0
+      };
+    });
+}
+
+function buildRevenueDowPattern(rows, excludeMonthKey = null) {
+  const daily = buildDailyRevenueSeries(rows).filter(d => {
+    if (!excludeMonthKey) return true;
+    return d.dateKey.slice(0, 7) !== excludeMonthKey;
+  });
+
+  if (!daily.length) return null;
+
+  const avgDaily =
+    daily.reduce((sum, d) => sum + d.value, 0) / daily.length;
+
+  if (!avgDaily) return null;
+
+  const buckets = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
+
+  daily.forEach(d => {
+    buckets[d.dow].push(d.value / avgDaily);
+  });
+
+  const factors = {};
+  for (let dow = 1; dow <= 7; dow++) {
+    const vals = buckets[dow];
+    factors[dow] = vals.length
+      ? vals.reduce((a, b) => a + b, 0) / vals.length
+      : 1;
+  }
+
+  return {
+    avgDaily,
+    factors,
+    sampleSize: daily.length
+  };
+}
+
+function calcMonthlyRevenueDowPacing(rows, monthlyForecast) {
+  if (!rows?.length || !monthlyForecast) return null;
+
+  const monthKey = getLatestMonthKey(rows);
+  if (!monthKey) return null;
+
+  const monthRows = getMonthRows(rows, monthKey);
+  if (!monthRows.length) return null;
+
+  const pattern = buildRevenueDowPattern(rows, monthKey);
+  if (!pattern) return null;
+
+  const allDates = getAllDatesInMonth(monthKey);
+
+  const avgFactor =
+    allDates.reduce((sum, d) => sum + (pattern.factors[d.dow] || 1), 0) /
+    allDates.length;
+
+  if (!avgFactor) return null;
+
+  const forecastDays = allDates.map(d => {
+    const factor = pattern.factors[d.dow] || 1;
+    return {
+      ...d,
+      factor,
+      forecast: (monthlyForecast / avgFactor) * factor
+    };
+  });
+
+  const maxDate = getMaxDataDate(monthRows);
+  const todayKey = maxDate.toISOString().slice(0, 10);
+
+  const mtdForecast = forecastDays
+    .filter(d => d.dateKey <= todayKey)
+    .reduce((sum, d) => sum + d.forecast, 0);
+
+  const mtdActual = Number(aggregate(monthRows).revenue) || 0;
+  const pct = mtdForecast > 0 ? mtdActual / mtdForecast : null;
+  const projected = pct !== null ? monthlyForecast * pct : mtdActual;
+
+  return {
+    method: "dow_pattern",
+    label: `Day ${maxDate.getDate()} of ${allDates.length}`,
+    elapsed: maxDate.getDate(),
+    total: allDates.length,
+    pct,
+    projected,
+    actual: mtdActual,
+    mtdForecast,
+    monthlyForecast,
+    sampleSize: pattern.sampleSize
+  };
+}
+
+function getMonthlyForecast(targetMap, metricKey, segment = "total") {
+  return Number(targetMap?.[metricKey]?.[segment]) || 0;
+}
+
+function buildProjectedActualByChannel(rows, period = "month", targetRows = []) {
   const out = {};
+
+  const monthKey = getLatestMonthKey(rows);
+  const targetMap = buildMetricTargetMap(targetRows, monthKey);
 
   VS_TARGET_CHANNELS.forEach(ch => {
     const chRows = rows.filter(r => r.cat === ch);
     const agg = aggregate(chRows);
+    const segment = CAT_TO_SEGMENT[ch];
 
     const pacingByMetric = {
       leads: calcHistoricalPacing(period, chRows, "leads"),
       completed: calcHistoricalPacing(period, chRows, "completed"),
-      revenue: calcHistoricalPacing(period, chRows, "revenue")
+      revenue:
+        period === "month"
+          ? calcMonthlyRevenueDowPacing(
+              chRows,
+              getMonthlyForecast(targetMap, "revenue", segment)
+            ) || calcHistoricalPacing(period, chRows, "revenue")
+          : calcHistoricalPacing(period, chRows, "revenue")
     };
 
     const projectedLeads = getProjectedMetricValue("leads", agg.leads, pacingByMetric.leads);
@@ -228,10 +373,17 @@ function buildProjectedActualByChannel(rows, period = "month") {
   });
 
   const totalAgg = aggregate(rows);
+
   const totalPacing = {
     leads: calcHistoricalPacing(period, rows, "leads"),
     completed: calcHistoricalPacing(period, rows, "completed"),
-    revenue: calcHistoricalPacing(period, rows, "revenue")
+    revenue:
+      period === "month"
+        ? calcMonthlyRevenueDowPacing(
+            rows,
+            getMonthlyForecast(targetMap, "revenue", "total")
+          ) || calcHistoricalPacing(period, rows, "revenue")
+        : calcHistoricalPacing(period, rows, "revenue")
   };
 
   const totalProjectedLeads = getProjectedMetricValue("leads", totalAgg.leads, totalPacing.leads);
@@ -1169,6 +1321,8 @@ function MultiLineShareChart({ data, groups, period, dimension = "channel" }) {
 }
 
 function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
+  const [hoveredIndex, setHoveredIndex] = React.useState(null);
+
   const isRateOrAov = metricKey.includes("Rate") || metricKey === "aov";
   const hasProjection = pacing && !isRateOrAov && (period === "week" || period === "month");
 
@@ -1257,9 +1411,30 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
 
   const yTicks = Array.from({ length: 5 }, (_, i) => yMin + (yRange * i) / 4);
 
+  const tooltipIndex = hoveredIndex;
+  const tooltipValue = tooltipIndex !== null ? vals[tooltipIndex] : null;
+  const tooltipX = tooltipIndex !== null ? xP(tooltipIndex) : null;
+  const tooltipY = tooltipIndex !== null ? yP(tooltipValue) : null;
+  const tooltipLabel =
+    tooltipIndex !== null
+      ? `${fmtLabel(data[tooltipIndex].label, period)} • ${fmtFullValue(tooltipValue)}`
+      : "";
+
+  const tooltipWidth = Math.max(92, Math.min(170, tooltipLabel.length * 6.3));
+  let tooltipLeft = tooltipX !== null ? tooltipX - tooltipWidth / 2 : 0;
+  if (tooltipLeft < 8) tooltipLeft = 8;
+  if (tooltipLeft + tooltipWidth > W - 8) tooltipLeft = W - tooltipWidth - 8;
+
+  let tooltipTop = tooltipY !== null ? tooltipY - 34 : 0;
+  if (tooltipTop < 6) tooltipTop = tooltipY + 12;
+
   return React.createElement(
     "svg",
-    { viewBox: `0 0 ${W} ${H}`, style: { width: "100%", height: "auto", overflow: "visible" } },
+    {
+      viewBox: `0 0 ${W} ${H}`,
+      style: { width: "100%", height: "auto", overflow: "visible" },
+      onMouseLeave: () => setHoveredIndex(null)
+    },
 
     yTicks.map((tick, idx) => {
       const y = yP(tick);
@@ -1283,6 +1458,39 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
         }, fmtY(tick))
       );
     }),
+
+    tooltipIndex !== null
+      ? React.createElement(
+          "g",
+          null,
+          React.createElement("line", {
+            x1: tooltipX,
+            x2: tooltipX,
+            y1: pT,
+            y2: pT + cH,
+            stroke: "#cbd5e1",
+            strokeWidth: "1",
+            strokeDasharray: "4,4"
+          }),
+          React.createElement("rect", {
+            x: tooltipLeft,
+            y: tooltipTop,
+            width: tooltipWidth,
+            height: 22,
+            rx: "6",
+            fill: "#111827",
+            opacity: 0.96
+          }),
+          React.createElement("text", {
+            x: tooltipLeft + tooltipWidth / 2,
+            y: tooltipTop + 14,
+            textAnchor: "middle",
+            fontSize: "9.5",
+            fill: "#fff",
+            fontWeight: "600"
+          }, tooltipLabel)
+        )
+      : null,
 
     chartType === "line"
       ? React.createElement(
@@ -1344,22 +1552,20 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
               React.createElement("circle", {
                 cx: xP(i),
                 cy: yP(v),
-                r: i === lastIdx && hasProjection ? 4 : 3,
-                fill: i === lastIdx && hasProjection ? "#3b82f6" : metric.color,
+                r: hoveredIndex === i ? 5 : (i === lastIdx && hasProjection ? 4 : 3),
+                fill: hoveredIndex === i ? "#111827" : (i === lastIdx && hasProjection ? "#3b82f6" : metric.color),
                 stroke: "#fff",
                 strokeWidth: "1.5"
               }),
               React.createElement("circle", {
                 cx: xP(i),
                 cy: yP(v),
-                r: 14,
-                fill: "transparent"
-              }),
-              React.createElement(
-                "g",
-                { style: { pointerEvents: "none" } },
-                React.createElement("title", null, `${fmtLabel(data[i].label, period)}: ${fmtFullValue(v)}`)
-              )
+                r: 16,
+                fill: "transparent",
+                style: { cursor: "pointer" },
+                onMouseEnter: () => setHoveredIndex(i),
+                onMouseMove: () => setHoveredIndex(i)
+              })
             )
           ),
 
@@ -1417,7 +1623,7 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
                 width: bW,
                 height: Math.max(barH, 0),
                 rx: "3",
-                fill: isProj ? "#3b82f6" : metric.color,
+                fill: hoveredIndex === i ? "#111827" : (isProj ? "#3b82f6" : metric.color),
                 opacity: isProj ? 1 : 0.88
               }),
               React.createElement("rect", {
@@ -1425,9 +1631,11 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
                 y: pT,
                 width: Math.max(bW, 22),
                 height: cH,
-                fill: "transparent"
+                fill: "transparent",
+                style: { cursor: "pointer" },
+                onMouseEnter: () => setHoveredIndex(i),
+                onMouseMove: () => setHoveredIndex(i)
               }),
-              React.createElement("title", null, `${fmtLabel(data[i].label, period)}: ${fmtFullValue(v)}`),
               isProj
                 ? React.createElement(
                     "g",
@@ -2958,7 +3166,7 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
   const h = React.createElement;
 
   const monthKey = getLatestMonthKey(filtered.length ? filtered : rawData);
-  const actualByChannel = buildProjectedActualByChannel(filtered.length ? filtered : rawData, "month");
+  const actualByChannel = buildProjectedActualByChannel(filtered.length ? filtered : rawData, "month", targetRows);
   const targetMap = buildMetricTargetMap(targetRows, monthKey);
 
   const monthLabel =
@@ -3383,7 +3591,7 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
             color: "#6b7280",
             margin: "2px 0 0"
           }
-        }, monthLabel + " — historical pacing projection vs target")
+        }, monthLabel + " — projected pacing vs target")
       ),
       h(
         "span",
@@ -3594,11 +3802,22 @@ function Dashboard() {
 
   const pacingByMetric = useMemo(() => {
     const result = {};
+    const monthKey = getLatestMonthKey(filtered);
+    const targetMap = buildMetricTargetMap(targetData, monthKey);
+
     METRICS.forEach(m => {
-      result[m.key] = calcHistoricalPacing(period, filtered, m.key);
+      if (period === "month" && m.key === "revenue") {
+        const revenueForecast = getMonthlyForecast(targetMap, "revenue", "total");
+        result[m.key] =
+          calcMonthlyRevenueDowPacing(filtered, revenueForecast) ||
+          calcHistoricalPacing(period, filtered, m.key);
+      } else {
+        result[m.key] = calcHistoricalPacing(period, filtered, m.key);
+      }
     });
+
     return result;
-  }, [period, filtered]);
+  }, [period, filtered, targetData]);
 
   const defaultPacing = pacingByMetric.revenue || null;
   const pct = (c, p) => (p ? ((c - p) / p) * 100 : 0);
@@ -3700,89 +3919,93 @@ function Dashboard() {
   };
 
   const pacingBanner =
-  defaultPacing && (period === "week" || period === "month")
-    ? React.createElement(
-        "div",
-        {
-          style: {
-            marginBottom: 12,
-            padding: isPhone ? "10px 12px" : "10px 14px",
-            borderRadius: 12,
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            display: "flex",
-            alignItems: isPhone ? "flex-start" : "center",
-            justifyContent: "space-between",
-            gap: 10,
-            flexDirection: isPhone ? "column" : "row"
-          }
-        },
-        React.createElement(
+    defaultPacing && (period === "week" || period === "month")
+      ? React.createElement(
           "div",
-          { style: { minWidth: 0 } },
+          {
+            style: {
+              marginBottom: 12,
+              padding: isPhone ? "10px 12px" : "10px 14px",
+              borderRadius: 12,
+              background: "#fff",
+              border: "1px solid #e5e7eb",
+              display: "flex",
+              alignItems: isPhone ? "flex-start" : "center",
+              justifyContent: "space-between",
+              gap: 10,
+              flexDirection: isPhone ? "column" : "row"
+            }
+          },
           React.createElement(
             "div",
-            {
-              style: {
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#111827",
-                marginBottom: 2
-              }
-            },
-            `Overview cards show projected % of Daily Avg Revenue pace`
+            { style: { minWidth: 0 } },
+            React.createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#111827",
+                  marginBottom: 2
+                }
+              },
+              period === "month"
+                ? "Overview cards show projected pacing"
+                : "Overview cards show projected pacing"
+            ),
+            React.createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 11,
+                  color: "#6b7280",
+                  lineHeight: 1.45
+                }
+              },
+              period === "month" && defaultPacing.method === "dow_pattern"
+                ? `${defaultPacing.label} · ${((defaultPacing.pct || 0) * 100).toFixed(0)}% to MTD forecast`
+                : defaultPacing.method === "historical"
+                ? `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% of a typical completed ${period}`
+                : `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% elapsed pacing fallback`
+            )
           ),
           React.createElement(
             "div",
             {
               style: {
-                fontSize: 11,
-                color: "#6b7280",
-                lineHeight: 1.45
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 9px",
+                borderRadius: 999,
+                background: "#f8fafc",
+                border: "1px solid #e5e7eb",
+                flexShrink: 0
               }
             },
-            defaultPacing.method === "historical"
-              ? `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% of a typical completed ${period}`
-              : `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% elapsed pacing fallback`
-          )
-        ),
-        React.createElement(
-          "div",
-          {
-            style: {
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "5px 9px",
-              borderRadius: 999,
-              background: "#f8fafc",
-              border: "1px solid #e5e7eb",
-              flexShrink: 0
-            }
-          },
-          React.createElement("div", {
-            style: {
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: "#3b82f6"
-            }
-          }),
-          React.createElement(
-            "span",
-            {
+            React.createElement("div", {
               style: {
-                fontSize: 11,
-                fontWeight: 700,
-                color: "#3b82f6",
-                whiteSpace: "nowrap"
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: "#3b82f6"
               }
-            },
-            "Projected"
+            }),
+            React.createElement(
+              "span",
+              {
+                style: {
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "#3b82f6",
+                  whiteSpace: "nowrap"
+                }
+              },
+              period === "month" ? "Projected" : "Projected"
+            )
           )
         )
-      )
-    : null;
+      : null;
 
   const floatingBase = {
     position: "fixed",
@@ -4253,15 +4476,15 @@ function Dashboard() {
         }
       },
       React.createElement("img", {
-            src: "/forms.png",
-            alt: "forms",
-            style: {
-              width: 28,
-              height: 28,
-              objectFit: "contain",
-              display: "block"
-            }
-          })
+        src: "/forms.png",
+        alt: "forms",
+        style: {
+          width: 28,
+          height: 28,
+          objectFit: "contain",
+          display: "block"
+        }
+      })
     ),
 
     React.createElement(
