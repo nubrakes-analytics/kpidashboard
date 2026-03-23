@@ -346,15 +346,18 @@ function buildProjectedActualByChannel(rows, period = "month", targetRows = []) 
     const agg = aggregate(chRows);
     const segment = CAT_TO_SEGMENT[ch];
 
+    const candidateRevenueForecast = getMonthlyForecast(targetMap, "revenue", segment);
+    const currentRevenueActual = agg.revenue || 0;
+
     const pacingByMetric = {
       leads: calcHistoricalPacing(period, chRows, "leads"),
       completed: calcHistoricalPacing(period, chRows, "completed"),
       revenue:
-        period === "month"
-          ? calcMonthlyRevenueDowPacing(
-              chRows,
-              getMonthlyForecast(targetMap, "revenue", segment)
-            ) || calcHistoricalPacing(period, chRows, "revenue")
+        period === "month" &&
+        candidateRevenueForecast &&
+        candidateRevenueForecast > currentRevenueActual
+          ? calcMonthlyRevenueDowPacing(chRows, candidateRevenueForecast) ||
+            calcHistoricalPacing(period, chRows, "revenue")
           : calcHistoricalPacing(period, chRows, "revenue")
     };
 
@@ -373,16 +376,18 @@ function buildProjectedActualByChannel(rows, period = "month", targetRows = []) 
   });
 
   const totalAgg = aggregate(rows);
+  const totalRevenueForecast = getMonthlyForecast(targetMap, "revenue", "total");
+  const totalRevenueActual = totalAgg.revenue || 0;
 
   const totalPacing = {
     leads: calcHistoricalPacing(period, rows, "leads"),
     completed: calcHistoricalPacing(period, rows, "completed"),
     revenue:
-      period === "month"
-        ? calcMonthlyRevenueDowPacing(
-            rows,
-            getMonthlyForecast(targetMap, "revenue", "total")
-          ) || calcHistoricalPacing(period, rows, "revenue")
+      period === "month" &&
+      totalRevenueForecast &&
+      totalRevenueForecast > totalRevenueActual
+        ? calcMonthlyRevenueDowPacing(rows, totalRevenueForecast) ||
+          calcHistoricalPacing(period, rows, "revenue")
         : calcHistoricalPacing(period, rows, "revenue")
   };
 
