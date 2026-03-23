@@ -876,8 +876,11 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue") {
   const elapsedDays = sumArray(currentElapsedWeekdayCounts);
   const totalDays = sumArray(fullCurrentPeriodWeekdayCounts);
 
-  const currentActual = currentRows.reduce(
-
+const currentActual = currentRows.reduce(
+  (sum, r) => sum + (Number(r[metricKey]) || 0),
+  0
+);
+  
   const historicalKeys = Object.keys(grouped)
     .sort()
     .filter(k => k !== currentPeriodKey);
