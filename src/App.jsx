@@ -4134,7 +4134,7 @@ function Dashboard() {
           ...floatingBase,
           bottom: isPhone ? `calc(${safeBottom} + ${phoneGap * 2}px)` : 20,
           right: isPhone ? primaryRight : 148,
-          background: "#2563eb",
+          background: "#fff",
           border: "none"
         }
       },
