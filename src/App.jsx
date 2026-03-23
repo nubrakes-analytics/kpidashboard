@@ -12,6 +12,9 @@ const COPILOT_DATASET_LIST_URL =
 
 const COPILOT_STORAGE_KEY = "nubrakes-ai-copilot-chat-v1";
 
+const FEEDBACK_FORM_BASE =
+  "https://docs.google.com/forms/d/e/1FAIpQLSfJz0oYRvkk6_TtIJWRd9KZ_JUENCyZXR3yHFc8I7ILMbDVzg/viewform?usp=pp_url&entry.1556088005=";
+
 const COPILOT_EXAMPLES = [
   "What does average order value mean?",
   "Where can I find the ops dashboard?",
@@ -604,7 +607,7 @@ function getScopedAggregates(rows, period, market, chanCat) {
     : [];
 
   const overall = aggregate(
-    (period === "week" || period === "month" || period === "day")
+    period === "week" || period === "month" || period === "day"
       ? currentPeriodRows
       : filteredRows
   );
@@ -754,7 +757,7 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue") {
 
   const maxDate = getMaxDataDate(rows);
   const currentPoint = period === "week"
-    ? (maxDate.getDay() === 0 ? 7 : maxDate.getDay())
+    ? maxDate.getDay() === 0 ? 7 : maxDate.getDay()
     : maxDate.getDate();
 
   const grouped = {};
@@ -3577,6 +3580,15 @@ function Dashboard() {
     return new Date(latest + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
   }, [series, period]);
 
+  const openFeedbackForm = useCallback(() => {
+    const currentUrl =
+      typeof window !== "undefined"
+        ? window.location.href
+        : "https://kpidashboard.jonathan-libiran.workers.dev/";
+    const feedbackUrl = `${FEEDBACK_FORM_BASE}${encodeURIComponent(currentUrl)}`;
+    window.open(feedbackUrl, "_blank", "noopener,noreferrer");
+  }, []);
+
   if (loading) {
     return React.createElement(
       "div",
@@ -3674,7 +3686,7 @@ function Dashboard() {
 
   const safeBottom = isPhone ? "calc(16px + env(safe-area-inset-bottom))" : 20;
   const primaryRight = isPhone ? 16 : 20;
-  const stackedOffset = isPhone ? 62 : 0;
+  const phoneGap = 62;
 
   return React.createElement(
     "div",
@@ -4112,6 +4124,38 @@ function Dashboard() {
       open: copilotOpen,
       onClose: () => setCopilotOpen(false)
     }),
+
+    React.createElement(
+      "button",
+      {
+        onClick: openFeedbackForm,
+        title: "Send Feedback",
+        style: {
+          ...floatingBase,
+          bottom: isPhone ? `calc(${safeBottom} + ${phoneGap * 2}px)` : 20,
+          right: isPhone ? primaryRight : 148,
+          background: "#2563eb",
+          border: "none"
+        }
+      },
+      React.createElement(
+        "svg",
+        {
+          width: 22,
+          height: 22,
+          viewBox: "0 0 24 24",
+          fill: "none",
+          stroke: "#fff",
+          strokeWidth: "2",
+          strokeLinecap: "round",
+          strokeLinejoin: "round"
+        },
+        React.createElement("path", { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" }),
+        React.createElement("path", { d: "M8 9h8" }),
+        React.createElement("path", { d: "M8 13h5" })
+      )
+    ),
+
     React.createElement(
       "button",
       {
@@ -4124,7 +4168,7 @@ function Dashboard() {
         },
         style: {
           ...floatingBase,
-          bottom: isPhone ? `calc(${safeBottom} + ${stackedOffset}px)` : 20,
+          bottom: isPhone ? `calc(${safeBottom} + ${phoneGap}px)` : 20,
           right: isPhone ? primaryRight : 84,
           background: "#fff",
           border: "1px solid #e5e7eb",
@@ -4158,6 +4202,7 @@ function Dashboard() {
             }
           })
     ),
+
     React.createElement(
       "button",
       {
