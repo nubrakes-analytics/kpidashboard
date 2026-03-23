@@ -3907,20 +3907,7 @@ function Dashboard() {
                 marginBottom: 2
               }
             },
-            "Overview cards show projected full-period totals"
-          ),
-          React.createElement(
-            "div",
-            {
-              style: {
-                fontSize: 11,
-                color: "#6b7280",
-                lineHeight: 1.45
-              }
-            },
-            defaultPacing.method === "weekday_weighted_historical"
-              ? `${defaultPacing.label} · based on historical weekday mix · n=${defaultPacing.sampleSize}`
-              : `${defaultPacing.label}`
+            "Overview cards show pacing"
           )
         ),
         React.createElement(
@@ -3955,7 +3942,7 @@ function Dashboard() {
                 whiteSpace: "nowrap"
               }
             },
-            "Projected"
+            "Pacing"
           )
         )
       )
