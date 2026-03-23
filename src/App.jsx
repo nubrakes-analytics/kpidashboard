@@ -877,9 +877,6 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue") {
   const totalDays = sumArray(fullCurrentPeriodWeekdayCounts);
 
   const currentActual = currentRows.reduce(
-    (sum, r) => sum + (Number(r[metricKey]) || 0),
-    0
-  );
 
   const historicalKeys = Object.keys(grouped)
     .sort()
@@ -956,21 +953,6 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue") {
     sampleSize: shares.length,
     elapsedWeekdayCounts: currentElapsedWeekdayCounts,
     fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
-  };
-}
-  const historicalPct = shares.reduce((a, b) => a + b, 0) / shares.length;
-  const projected = historicalPct > 0 ? currentActual / historicalPct : currentActual;
-
-  return {
-    elapsed: currentPoint,
-    total,
-    pct: historicalPct,
-    historicalPct,
-    label: "Day " + currentPoint + " of " + total,
-    projected,
-    actual: currentActual,
-    method: "historical",
-    sampleSize: shares.length
   };
 }
 
