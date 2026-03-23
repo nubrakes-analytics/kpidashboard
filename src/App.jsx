@@ -3700,36 +3700,89 @@ function Dashboard() {
   };
 
   const pacingBanner =
-    defaultPacing && (period === "week" || period === "month")
-      ? React.createElement(
+  defaultPacing && (period === "week" || period === "month")
+    ? React.createElement(
+        "div",
+        {
+          style: {
+            marginBottom: 12,
+            padding: isPhone ? "10px 12px" : "10px 14px",
+            borderRadius: 12,
+            background: "#fff",
+            border: "1px solid #e5e7eb",
+            display: "flex",
+            alignItems: isPhone ? "flex-start" : "center",
+            justifyContent: "space-between",
+            gap: 10,
+            flexDirection: isPhone ? "column" : "row"
+          }
+        },
+        React.createElement(
           "div",
-          {
-            style: {
-              marginBottom: 16,
-              padding: "10px 16px",
-              borderRadius: 10,
-              background: "#eff6ff",
-              border: "1px solid #bfdbfe",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap"
-            }
-          },
-          React.createElement("span", { style: { fontSize: 16 } }, "📈"),
+          { style: { minWidth: 0 } },
           React.createElement(
             "div",
-            null,
-            React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: "#1d4ed8" } }, (period === "week" ? "Week" : "Month") + " Historical Pacing · " + defaultPacing.label + " · " + (defaultPacing.pct * 100).toFixed(0) + "% typical completion"),
-            React.createElement("span", { style: { fontSize: 11, color: "#3b82f6", marginLeft: 8 } }, defaultPacing.method === "historical" ? `Based on ${defaultPacing.sampleSize} completed prior periods` : "Fallback to elapsed-day pacing")
+            {
+              style: {
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#111827",
+                marginBottom: 2
+              }
+            },
+            `Overview cards show projected % of Daily Avg Revenue pace`
           ),
           React.createElement(
             "div",
-            { style: { marginLeft: "auto", background: "#dbeafe", borderRadius: 20, padding: "2px 10px" } },
-            React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: "#1d4ed8" } }, (defaultPacing.pct * 100).toFixed(0) + "%")
+            {
+              style: {
+                fontSize: 11,
+                color: "#6b7280",
+                lineHeight: 1.45
+              }
+            },
+            defaultPacing.method === "historical"
+              ? `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% of a typical completed ${period} based on ${defaultPacing.sampleSize} prior ${defaultPacing.sampleSize === 1 ? "period" : "periods"}`
+              : `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% elapsed pacing fallback`
+          )
+        ),
+        React.createElement(
+          "div",
+          {
+            style: {
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "5px 9px",
+              borderRadius: 999,
+              background: "#f8fafc",
+              border: "1px solid #e5e7eb",
+              flexShrink: 0
+            }
+          },
+          React.createElement("div", {
+            style: {
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: "#3b82f6"
+            }
+          }),
+          React.createElement(
+            "span",
+            {
+              style: {
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#3b82f6",
+                whiteSpace: "nowrap"
+              }
+            },
+            "Projected"
           )
         )
-      : null;
+      )
+    : null;
 
   const floatingBase = {
     position: "fixed",
@@ -3891,7 +3944,7 @@ function Dashboard() {
                             alignItems: "center"
                           }
                         },
-                        React.createElement("span", { style: { fontSize: 10, color: "#9ca3af" } }, "Actual so far"),
+                        React.createElement("span", { style: { fontSize: 10, color: "#9ca3af" } }, "Actual to date"),
                         React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: "#6b7280" } }, m.fmt(actual))
                       )
                     : null
