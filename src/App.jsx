@@ -3742,7 +3742,7 @@ function Dashboard() {
               }
             },
             defaultPacing.method === "historical"
-              ? `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% of a typical completed ${period} based on ${defaultPacing.sampleSize} prior ${defaultPacing.sampleSize === 1 ? "period" : "periods"}`
+              ? `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% of a typical completed ${period}`
               : `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% elapsed pacing fallback`
           )
         ),
