@@ -3952,21 +3952,6 @@ function Dashboard() {
               period === "month"
                 ? "Overview cards show projected pacing"
                 : "Overview cards show projected pacing"
-            ),
-            React.createElement(
-              "div",
-              {
-                style: {
-                  fontSize: 11,
-                  color: "#6b7280",
-                  lineHeight: 1.45
-                }
-              },
-              period === "month" && defaultPacing.method === "dow_pattern"
-                ? `${defaultPacing.label} · ${((defaultPacing.pct || 0) * 100).toFixed(0)}% to MTD forecast`
-                : defaultPacing.method === "historical"
-                ? `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% of a typical completed ${period}`
-                : `${defaultPacing.label} · ${(defaultPacing.pct * 100).toFixed(0)}% elapsed pacing fallback`
             )
           ),
           React.createElement(
