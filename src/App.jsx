@@ -1170,53 +1170,120 @@ function MultiLineShareChart({ data, groups, period, dimension = "channel" }) {
 
 function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
   const isRateOrAov = metricKey.includes("Rate") || metricKey === "aov";
+  const hasProjection = pacing && !isRateOrAov && (period === "week" || period === "month");
 
   const vals = data.map((d, i) => {
-    const raw = d[metricKey] || 0;
-    if (i === data.length - 1 && pacing && !isRateOrAov && (period === "week" || period === "month")) {
+    const raw = Number(d[metricKey]) || 0;
+    if (i === data.length - 1 && hasProjection) {
       return pacing.projected ?? raw;
     }
     return raw;
   });
 
-  const actuals = data.map(d => d[metricKey] || 0);
-  const hasProjection = pacing && !isRateOrAov && (period === "week" || period === "month");
+  const actuals = data.map(d => Number(d[metricKey]) || 0);
 
   if (!vals.length) return null;
 
-  const max = Math.max(...vals, 1);
+  const fmtFullValue = v => {
+    if (metricKey === "revenue" || metricKey === "aov") {
+      return "$" + Math.round(v).toLocaleString();
+    }
+    if (metricKey.includes("Rate")) {
+      return (v * 100).toFixed(1) + "%";
+    }
+    return Math.round(v).toLocaleString();
+  };
+
+  const fmtY = v => {
+    if (metricKey === "revenue" || metricKey === "aov") {
+      if (Math.abs(v) >= 1000) return "$" + (v / 1000).toFixed(1) + "k";
+      return "$" + Math.round(v);
+    }
+    if (metricKey.includes("Rate")) {
+      return (v * 100).toFixed(0) + "%";
+    }
+    if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + "k";
+    return Math.round(v).toString();
+  };
+
+  const minValRaw = Math.min(...vals);
+  const maxValRaw = Math.max(...vals);
+
+  let yMin = 0;
+  let yMax = maxValRaw || 1;
+
+  if (metricKey.includes("Rate")) {
+    const range = Math.max(maxValRaw - minValRaw, 0.01);
+    const pad = range * 0.18;
+    yMin = Math.max(0, minValRaw - pad);
+    yMax = Math.min(1, maxValRaw + pad);
+    if (yMax - yMin < 0.04) {
+      const mid = (yMax + yMin) / 2;
+      yMin = Math.max(0, mid - 0.02);
+      yMax = Math.min(1, mid + 0.02);
+    }
+  } else {
+    const range = Math.max(maxValRaw - minValRaw, Math.abs(maxValRaw) * 0.08, 1);
+    const pad = range * 0.18;
+
+    if (metricKey === "aov") {
+      yMin = Math.max(0, minValRaw - pad);
+      yMax = maxValRaw + pad;
+    } else {
+      const startAtZero = maxValRaw > 0 && minValRaw / maxValRaw < 0.65;
+      yMin = startAtZero ? 0 : Math.max(0, minValRaw - pad);
+      yMax = maxValRaw + pad;
+    }
+
+    if (yMax <= yMin) yMax = yMin + 1;
+  }
+
   const W = 680;
-  const H = 210;
-  const pL = 56;
-  const pB = 36;
-  const pT = 16;
-  const pR = 16;
+  const H = 250;
+  const pL = 64;
+  const pB = 44;
+  const pT = 18;
+  const pR = 18;
   const cW = W - pL - pR;
   const cH = H - pB - pT;
-  const bW = Math.min(cW / vals.length - 2, 28);
+  const bW = Math.min(cW / vals.length - 4, 28);
   const step = Math.ceil(vals.length / 10);
   const lastIdx = vals.length - 1;
-  const fmtY = v => {
-    if (metricKey === "revenue" || metricKey === "aov") return "$" + (v >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v));
-    if (metricKey.includes("Rate")) return (v * 100).toFixed(0) + "%";
-    return v >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v).toString();
-  };
-  const xP = i => pL + (i / (vals.length - 1 || 1)) * cW;
-  const yP = v => pT + cH - (v / max) * cH;
   const gId = "lg_" + metricKey;
+
+  const yRange = yMax - yMin || 1;
+  const xP = i => pL + (vals.length === 1 ? cW / 2 : (i / (vals.length - 1)) * cW);
+  const yP = v => pT + cH - ((v - yMin) / yRange) * cH;
+
+  const yTicks = Array.from({ length: 5 }, (_, i) => yMin + (yRange * i) / 4);
 
   return React.createElement(
     "svg",
-    { viewBox: `0 0 ${W} ${H}`, style: { width: "100%", height: "auto" } },
-    [0, 0.25, 0.5, 0.75, 1].map(t => {
-      const y = pT + cH * (1 - t);
+    { viewBox: `0 0 ${W} ${H}`, style: { width: "100%", height: "auto", overflow: "visible" } },
+
+    yTicks.map((tick, idx) => {
+      const y = yP(tick);
       return React.createElement(
         "g",
-        { key: t },
-        React.createElement("line", { x1: pL, x2: W - pR, y1: y, y2: y, stroke: "#e5e7eb", strokeWidth: "1" }),
-        React.createElement("text", { x: pL - 5, y: y + 4, textAnchor: "end", fontSize: "10", fill: "#9ca3af" }, fmtY(max * t))
+        { key: idx },
+        React.createElement("line", {
+          x1: pL,
+          x2: W - pR,
+          y1: y,
+          y2: y,
+          stroke: "#e5e7eb",
+          strokeWidth: "1"
+        }),
+        React.createElement("text", {
+          x: pL - 6,
+          y: y + 4,
+          textAnchor: "end",
+          fontSize: "10",
+          fill: "#9ca3af"
+        }, fmtY(tick))
       );
     }),
+
     chartType === "line"
       ? React.createElement(
           "g",
@@ -1227,21 +1294,36 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
             React.createElement(
               "linearGradient",
               { id: gId, x1: "0", y1: "0", x2: "0", y2: "1" },
-              React.createElement("stop", { offset: "0%", stopColor: metric.color, stopOpacity: "0.18" }),
-              React.createElement("stop", { offset: "100%", stopColor: metric.color, stopOpacity: "0.01" })
+              React.createElement("stop", {
+                offset: "0%",
+                stopColor: metric.color,
+                stopOpacity: "0.18"
+              }),
+              React.createElement("stop", {
+                offset: "100%",
+                stopColor: metric.color,
+                stopOpacity: "0.01"
+              })
             )
           ),
+
           React.createElement("polygon", {
-            points: xP(0).toFixed(1) + "," + (pT + cH) + " " + vals.map((v, i) => xP(i).toFixed(1) + "," + yP(v).toFixed(1)).join(" ") + " " + xP(lastIdx).toFixed(1) + "," + (pT + cH),
+            points:
+              `${xP(0).toFixed(1)},${(pT + cH).toFixed(1)} ` +
+              vals.map((v, i) => `${xP(i).toFixed(1)},${yP(v).toFixed(1)}`).join(" ") +
+              ` ${xP(lastIdx).toFixed(1)},${(pT + cH).toFixed(1)}`,
             fill: `url(#${gId})`
           }),
+
           React.createElement("polyline", {
-            points: vals.map((v, i) => xP(i).toFixed(1) + "," + yP(v).toFixed(1)).join(" "),
+            points: vals.map((v, i) => `${xP(i).toFixed(1)},${yP(v).toFixed(1)}`).join(" "),
             fill: "none",
             stroke: metric.color,
             strokeWidth: "2",
-            strokeLinejoin: "round"
+            strokeLinejoin: "round",
+            strokeLinecap: "round"
           }),
+
           hasProjection && vals.length > 1
             ? React.createElement("line", {
                 x1: xP(lastIdx - 1).toFixed(1),
@@ -1254,28 +1336,66 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
                 opacity: "0.7"
               })
             : null,
+
           vals.map((v, i) =>
-            React.createElement("circle", {
-              key: i,
-              cx: xP(i),
-              cy: yP(v),
-              r: i === lastIdx && hasProjection ? 4 : 3,
-              fill: i === lastIdx && hasProjection ? "#3b82f6" : metric.color,
-              stroke: "#fff",
-              strokeWidth: "1.5"
-            })
+            React.createElement(
+              "g",
+              { key: i },
+              React.createElement("circle", {
+                cx: xP(i),
+                cy: yP(v),
+                r: i === lastIdx && hasProjection ? 4 : 3,
+                fill: i === lastIdx && hasProjection ? "#3b82f6" : metric.color,
+                stroke: "#fff",
+                strokeWidth: "1.5"
+              }),
+              React.createElement("circle", {
+                cx: xP(i),
+                cy: yP(v),
+                r: 14,
+                fill: "transparent"
+              }),
+              React.createElement(
+                "g",
+                { style: { pointerEvents: "none" } },
+                React.createElement("title", null, `${fmtLabel(data[i].label, period)}: ${fmtFullValue(v)}`)
+              )
+            )
           ),
+
           hasProjection
             ? React.createElement(
                 "g",
                 null,
-                React.createElement("rect", { x: xP(lastIdx) - 28, y: yP(vals[lastIdx]) - 22, width: 56, height: 16, rx: "4", fill: "#3b82f6" }),
-                React.createElement("text", { x: xP(lastIdx), y: yP(vals[lastIdx]) - 11, textAnchor: "middle", fontSize: "9", fill: "#fff", fontWeight: "700" }, "▲ " + fmtY(vals[lastIdx]))
+                React.createElement("rect", {
+                  x: xP(lastIdx) - 32,
+                  y: yP(vals[lastIdx]) - 24,
+                  width: 64,
+                  height: 18,
+                  rx: "4",
+                  fill: "#3b82f6"
+                }),
+                React.createElement("text", {
+                  x: xP(lastIdx),
+                  y: yP(vals[lastIdx]) - 12,
+                  textAnchor: "middle",
+                  fontSize: "9",
+                  fill: "#fff",
+                  fontWeight: "700"
+                }, "Proj " + fmtY(vals[lastIdx]))
               )
             : null,
+
           vals.map((v, i) =>
             i % step === 0
-              ? React.createElement("text", { key: i, x: xP(i), y: H - 4, textAnchor: "middle", fontSize: "9", fill: "#9ca3af" }, fmtLabel(data[i].label, period))
+              ? React.createElement("text", {
+                  key: "x_" + i,
+                  x: xP(i),
+                  y: H - 6,
+                  textAnchor: "middle",
+                  fontSize: "9",
+                  fill: "#9ca3af"
+                }, fmtLabel(data[i].label, period))
               : null
           )
         )
@@ -1284,8 +1404,8 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
           null,
           vals.map((v, i) => {
             const x = pL + (i / vals.length) * cW + cW / vals.length / 2;
-            const barH = Math.max((v / max) * cH, 0);
-            const y = pT + cH - barH;
+            const barH = Math.max(((v - yMin) / yRange) * cH, 1.5);
+            const y = yP(v);
             const isProj = i === lastIdx && hasProjection;
 
             return React.createElement(
@@ -1295,21 +1415,49 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
                 x: x - bW / 2,
                 y,
                 width: bW,
-                height: barH,
+                height: Math.max(barH, 0),
                 rx: "3",
                 fill: isProj ? "#3b82f6" : metric.color,
-                opacity: isProj ? 1 : 0.85
+                opacity: isProj ? 1 : 0.88
               }),
+              React.createElement("rect", {
+                x: x - Math.max(bW, 22) / 2,
+                y: pT,
+                width: Math.max(bW, 22),
+                height: cH,
+                fill: "transparent"
+              }),
+              React.createElement("title", null, `${fmtLabel(data[i].label, period)}: ${fmtFullValue(v)}`),
               isProj
                 ? React.createElement(
                     "g",
                     null,
-                    React.createElement("rect", { x: x - 28, y: y - 20, width: 56, height: 16, rx: "4", fill: "#3b82f6" }),
-                    React.createElement("text", { x, y: y - 9, textAnchor: "middle", fontSize: "9", fill: "#fff", fontWeight: "700" }, "▲ " + fmtY(v))
+                    React.createElement("rect", {
+                      x: x - 28,
+                      y: y - 20,
+                      width: 56,
+                      height: 16,
+                      rx: "4",
+                      fill: "#3b82f6"
+                    }),
+                    React.createElement("text", {
+                      x,
+                      y: y - 9,
+                      textAnchor: "middle",
+                      fontSize: "9",
+                      fill: "#fff",
+                      fontWeight: "700"
+                    }, "Proj")
                   )
                 : null,
               i % step === 0
-                ? React.createElement("text", { x, y: H - 4, textAnchor: "middle", fontSize: "9", fill: "#9ca3af" }, fmtLabel(data[i].label, period))
+                ? React.createElement("text", {
+                    x,
+                    y: H - 6,
+                    textAnchor: "middle",
+                    fontSize: "9",
+                    fill: "#9ca3af"
+                  }, fmtLabel(data[i].label, period))
                 : null
             );
           })
