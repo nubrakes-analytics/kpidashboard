@@ -742,6 +742,90 @@ function mapRows(d) {
   }));
 }
 
+function toDateSafe(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function getRowDate(row) {
+  return toDateSafe(row.date || row.Day || row.Week || row.Month);
+}
+
+function getWeekStartFromDate(d) {
+  const x = startOfDay(d);
+  const day = x.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  x.setDate(x.getDate() + diffToMonday);
+  return x;
+}
+
+function getWeekStartFromKey(weekKey) {
+  return toDateSafe(weekKey + "T12:00:00");
+}
+
+function getMonthStartFromKey(monthKey) {
+  return toDateSafe(monthKey + "-01T12:00:00");
+}
+
+function getPeriodStartDate(periodKey, period) {
+  if (period === "week") return getWeekStartFromKey(periodKey);
+  if (period === "month") return getMonthStartFromKey(periodKey);
+  return null;
+}
+
+function getPeriodEndDate(periodKey, period) {
+  const start = getPeriodStartDate(periodKey, period);
+  if (!start) return null;
+
+  if (period === "week") {
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    return end;
+  }
+
+  if (period === "month") {
+    return new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  }
+
+  return null;
+}
+
+function countWeekdaysBetween(startDate, endDate) {
+  const counts = [0, 0, 0, 0, 0, 0, 0]; // Sun..Sat
+  if (!startDate || !endDate || endDate < startDate) return counts;
+
+  const d = startOfDay(startDate);
+  const end = startOfDay(endDate);
+
+  while (d <= end) {
+    counts[d.getDay()] += 1;
+    d.setDate(d.getDate() + 1);
+  }
+
+  return counts;
+}
+
+function sumArray(arr) {
+  return arr.reduce((a, b) => a + b, 0);
+}
+
+function getMetricTotalByWeekday(rows, metricKey) {
+  const totals = [0, 0, 0, 0, 0, 0, 0]; // Sun..Sat
+
+  rows.forEach(r => {
+    const d = getRowDate(r);
+    if (!d) return;
+    totals[d.getDay()] += Number(r[metricKey]) || 0;
+  });
+
+  return totals;
+}
+
 function calcHistoricalPacing(period, rows, metricKey = "revenue") {
   if (!rows?.length) return null;
   if (period !== "week" && period !== "month") return null;
@@ -755,11 +839,6 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue") {
 
   if (!currentPeriodKey) return null;
 
-  const maxDate = getMaxDataDate(rows);
-  const currentPoint = period === "week"
-    ? maxDate.getDay() === 0 ? 7 : maxDate.getDay()
-    : maxDate.getDate();
-
   const grouped = {};
   rows.forEach(r => {
     const key = getPeriodKey(r, period);
@@ -769,12 +848,38 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue") {
   });
 
   const currentRows = grouped[currentPeriodKey] || [];
-  const currentActual = currentRows
-    .filter(r => {
-      const p = getPointInPeriod(r, period);
-      return p !== null && p <= currentPoint;
-    })
-    .reduce((sum, r) => sum + (Number(r[metricKey]) || 0), 0);
+  if (!currentRows.length) return null;
+
+  const currentMaxDate = currentRows
+    .map(getRowDate)
+    .filter(Boolean)
+    .sort((a, b) => a - b)
+    .slice(-1)[0];
+
+  if (!currentMaxDate) return null;
+
+  const currentPeriodStart = getPeriodStartDate(currentPeriodKey, period);
+  const currentPeriodEnd = getPeriodEndDate(currentPeriodKey, period);
+
+  if (!currentPeriodStart || !currentPeriodEnd) return null;
+
+  const currentElapsedWeekdayCounts = countWeekdaysBetween(
+    currentPeriodStart,
+    currentMaxDate
+  );
+
+  const fullCurrentPeriodWeekdayCounts = countWeekdaysBetween(
+    currentPeriodStart,
+    currentPeriodEnd
+  );
+
+  const elapsedDays = sumArray(currentElapsedWeekdayCounts);
+  const totalDays = sumArray(fullCurrentPeriodWeekdayCounts);
+
+  const currentActual = currentRows.reduce(
+    (sum, r) => sum + (Number(r[metricKey]) || 0),
+    0
+  );
 
   const historicalKeys = Object.keys(grouped)
     .sort()
@@ -783,44 +888,76 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue") {
   const shares = historicalKeys
     .map(key => {
       const group = grouped[key];
-      const total = group.reduce((sum, r) => sum + (Number(r[metricKey]) || 0), 0);
+      if (!group?.length) return null;
+
+      const periodStart = getPeriodStartDate(key, period);
+      const periodEnd = getPeriodEndDate(key, period);
+      if (!periodStart || !periodEnd) return null;
+
+      const fullWeekdayCounts = countWeekdaysBetween(periodStart, periodEnd);
+      const weekdayTotals = getMetricTotalByWeekday(group, metricKey);
+      const total = weekdayTotals.reduce((a, b) => a + b, 0);
+
       if (!total) return null;
 
-      const periodLength = getPeriodLengthFromKey(key, period);
-      const maxPoint = Math.max(...group.map(r => getPointInPeriod(r, period) || 0));
-      const isComplete = maxPoint >= periodLength;
-      if (!isComplete) return null;
+      let expectedElapsed = 0;
 
-      const cumulative = group
-        .filter(r => {
-          const p = getPointInPeriod(r, period);
-          return p !== null && p <= currentPoint;
-        })
-        .reduce((sum, r) => sum + (Number(r[metricKey]) || 0), 0);
+      for (let i = 0; i < 7; i++) {
+        const fullCount = fullWeekdayCounts[i] || 0;
+        const elapsedCount = currentElapsedWeekdayCounts[i] || 0;
+        if (!fullCount || !elapsedCount) continue;
 
-      const share = cumulative / total;
+        const avgPerWeekdayOccurrence = (weekdayTotals[i] || 0) / fullCount;
+        expectedElapsed += avgPerWeekdayOccurrence * elapsedCount;
+      }
+
+      const share = expectedElapsed / total;
       if (!share || share <= 0 || share > 1.25) return null;
+
       return share;
     })
-    .filter(Boolean);
-
-  const total = getPeriodLengthFromKey(currentPeriodKey, period);
+    .filter(v => v !== null);
 
   if (!shares.length) {
-    const fallbackPct = period === "week" ? currentPoint / 7 : currentPoint / total;
+    const fallbackPct = totalDays > 0 ? elapsedDays / totalDays : null;
     return {
-      elapsed: currentPoint,
-      total,
+      elapsed: elapsedDays,
+      total: totalDays,
       pct: fallbackPct,
       historicalPct: null,
-      label: "Day " + currentPoint + " of " + total,
+      label:
+        period === "week"
+          ? `Weekday-weighted fallback · ${elapsedDays} of ${totalDays} days elapsed`
+          : `Weekday-weighted fallback · ${elapsedDays} of ${totalDays} days elapsed`,
       projected: fallbackPct > 0 ? currentActual / fallbackPct : currentActual,
       actual: currentActual,
       method: "fallback",
-      sampleSize: 0
+      sampleSize: 0,
+      elapsedWeekdayCounts: currentElapsedWeekdayCounts,
+      fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
     };
   }
 
+  const historicalPct = shares.reduce((a, b) => a + b, 0) / shares.length;
+  const projected = historicalPct > 0 ? currentActual / historicalPct : currentActual;
+
+  return {
+    elapsed: elapsedDays,
+    total: totalDays,
+    pct: historicalPct,
+    historicalPct,
+    label:
+      period === "week"
+        ? `Weekday-weighted week pacing`
+        : `Weekday-weighted month pacing`,
+    projected,
+    actual: currentActual,
+    method: "weekday_weighted_historical",
+    sampleSize: shares.length,
+    elapsedWeekdayCounts: currentElapsedWeekdayCounts,
+    fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
+  };
+}
   const historicalPct = shares.reduce((a, b) => a + b, 0) / shares.length;
   const projected = historicalPct > 0 ? currentActual / historicalPct : currentActual;
 
@@ -3785,7 +3922,20 @@ function Dashboard() {
                 marginBottom: 2
               }
             },
-            `Overview cards show projected`
+            "Overview cards show projected full-period totals"
+          ),
+          React.createElement(
+            "div",
+            {
+              style: {
+                fontSize: 11,
+                color: "#6b7280",
+                lineHeight: 1.45
+              }
+            },
+            defaultPacing.method === "weekday_weighted_historical"
+              ? `${defaultPacing.label} · based on historical weekday mix · n=${defaultPacing.sampleSize}`
+              : `${defaultPacing.label}`
           )
         ),
         React.createElement(
