@@ -258,8 +258,6 @@ async function callAPI(messages) {
   });
 
   const text = await response.text();
-  console.log("AI STATUS:", response.status);
-  console.log("AI RAW RESPONSE:", text);
 
   if (!response.ok) {
     throw new Error(`AI request failed: ${response.status} ${text}`);
@@ -827,19 +825,14 @@ function getMetricTotalByWeekday(rows, metricKey) {
 }
 
 function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays = 90) {
-  console.log("=== calcHistoricalPacing_DEBUG START ===");
-  console.log({ period, metricKey, lookbackDays, rowCount: rows?.length || 0 });
 
   if (!rows?.length) {
-    console.log("EXIT: no rows");
     return null;
   }
   if (period !== "week" && period !== "month") {
-    console.log("EXIT: invalid period");
     return null;
   }
   if (!ADDITIVE_METRICS.has(metricKey)) {
-    console.log("EXIT: metric not additive");
     return null;
   }
 
@@ -848,14 +841,11 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     .filter(Boolean)
     .sort();
 
-  console.log("allPeriodKeys", allPeriodKeys);
 
   const currentPeriodKey = allPeriodKeys.slice(-1)[0];
 
-  console.log("currentPeriodKey", currentPeriodKey);
 
   if (!currentPeriodKey) {
-    console.log("EXIT: no currentPeriodKey");
     return null;
   }
 
@@ -867,16 +857,9 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     grouped[key].push(r);
   });
 
-  console.log(
-    "groupedCounts",
-    Object.fromEntries(Object.entries(grouped).map(([k, v]) => [k, v.length]))
-  );
-
   const currentRows = grouped[currentPeriodKey] || [];
-  console.log("currentRows.length", currentRows.length);
 
   if (!currentRows.length) {
-    console.log("EXIT: no currentRows");
     return null;
   }
 
@@ -885,27 +868,18 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     .filter(Boolean)
     .sort((a, b) => a - b);
 
-  console.log(
-    "currentDates",
-    currentDates.map(d => d?.toISOString?.() || String(d))
-  );
 
   const currentMaxDate = currentDates.slice(-1)[0];
-  console.log("currentMaxDate", currentMaxDate?.toISOString?.() || currentMaxDate);
 
   if (!currentMaxDate) {
-    console.log("EXIT: no currentMaxDate");
     return null;
   }
 
   const currentPeriodStart = getPeriodStartDate(currentPeriodKey, period);
   const currentPeriodEnd = getPeriodEndDate(currentPeriodKey, period);
 
-  console.log("currentPeriodStart", currentPeriodStart?.toISOString?.() || currentPeriodStart);
-  console.log("currentPeriodEnd", currentPeriodEnd?.toISOString?.() || currentPeriodEnd);
 
   if (!currentPeriodStart || !currentPeriodEnd) {
-    console.log("EXIT: invalid current period bounds");
     return null;
   }
 
@@ -913,7 +887,6 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
   lookbackStart.setDate(lookbackStart.getDate() - lookbackDays);
   const lookbackStartDay = startOfDay(lookbackStart);
 
-  console.log("lookbackStartDay", lookbackStartDay?.toISOString?.() || lookbackStartDay);
 
   const currentElapsedWeekdayCounts = countWeekdaysBetween(
     currentPeriodStart,
@@ -925,20 +898,15 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     currentPeriodEnd
   );
 
-  console.log("currentElapsedWeekdayCounts", currentElapsedWeekdayCounts);
-  console.log("fullCurrentPeriodWeekdayCounts", fullCurrentPeriodWeekdayCounts);
 
   const elapsedDays = sumArray(currentElapsedWeekdayCounts);
   const totalDays = sumArray(fullCurrentPeriodWeekdayCounts);
 
-  console.log({ elapsedDays, totalDays });
 
   const currentActual = currentRows.reduce(
     (sum, r) => sum + (Number(r[metricKey]) || 0),
     0
   );
-
-  console.log("currentActual", currentActual);
 
   const historicalKeys = Object.keys(grouped)
     .sort()
@@ -949,7 +917,6 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
       return startOfDay(bucketStart).getTime() >= lookbackStartDay.getTime();
     });
 
-  console.log("historicalKeys", historicalKeys);
 
   const shareDetails = historicalKeys.map(key => {
     const group = grouped[key];
@@ -1023,13 +990,11 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     };
   });
 
-  console.log("shareDetails", shareDetails);
 
   const shares = shareDetails
     .filter(d => d.valid)
     .map(d => d.share);
 
-  console.log("validShares", shares);
 
   if (!shares.length) {
     const fallbackPct = totalDays > 0 ? elapsedDays / totalDays : null;
@@ -1049,8 +1014,7 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
       fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
     };
 
-    console.log("FINAL RESULT", result);
-    console.log("=== calcHistoricalPacing_DEBUG END ===");
+    
     return result;
   }
 
@@ -1074,8 +1038,7 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
   };
 
-  console.log("FINAL RESULT", result);
-  console.log("=== calcHistoricalPacing_DEBUG END ===");
+  
   return result;
 }
   
