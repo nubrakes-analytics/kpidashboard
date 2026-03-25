@@ -17,14 +17,14 @@ const FEEDBACK_FORM_BASE =
   "https://docs.google.com/forms/d/e/1FAIpQLSfJz0oYRvkk6_TtIJWRd9KZ_JUENCyZXR3yHFc8I7ILMbDVzg/viewform?usp=pp_url&entry.1556088005=";
 
 const COPILOT_EXAMPLES = [
-  "What does average order value mean?",
+  "What changed in lead mix this week?",
   "Where can I find the ops dashboard?",
+  "What was the referral revenue in February 2026?",
+  "Compare GBL and Referral Leads this month?",
   "Which dataset should I use for supply and demand by market?",
   "Why is conversion rate down this March?",
-  "What was the referral revenue in February 2026?",
-  "Why are completed jobs up/down?",
-  "Which markets are underperforming?",
-  "What changed in lead mix this week?"
+  "Why are completed jobs down?",
+  "What does average order value mean?",
 ];
 
 const METRICS = [
@@ -2915,7 +2915,7 @@ function CopilotOverlay({ open, onClose }) {
 
   const cardStyle = getOverlayCardStyle({ isPhone, isTablet, maxWidth: 460 });
   const compact = isPhone;
-  const exampleButtons = compact ? COPILOT_EXAMPLES.slice(0, 3) : COPILOT_EXAMPLES.slice(0, 4);
+  const exampleButtons = compact ? COPILOT_EXAMPLES.slice(0, 4) : COPILOT_EXAMPLES.slice(0, 6);
 
   return React.createElement(
     "div",
