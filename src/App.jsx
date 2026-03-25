@@ -1244,7 +1244,7 @@ async function loadData() {
 
   for (const url of dataUrls) {
     try {
-      const r = await fetch(url);
+      const r = await fetch(url + "?t=" + Date.now(), { cache: "no-store" });
       if (!r.ok) throw new Error(r.status);
       const d = JSON.parse(await r.text());
       if (!Array.isArray(d) || !d.length) throw new Error("empty");
