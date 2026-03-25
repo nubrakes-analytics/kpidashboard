@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
-const DATA_URL = "https://cdn.jsdelivr.net/gh/nubrakes-analytics/NuBrakes-Copilot@main/data/fact_nubrakes_channel_market_kpi_daily.json";
+const DATA_URL =
+  "https://cdn.jsdelivr.net/gh/nubrakes-analytics/NuBrakes-Copilot@main/data/fact_nubrakes_channel_market_kpi_daily.json";
 const AI_MODEL = "gpt-4.1";
 const AI_ENDPOINT = "/api/ai";
 
@@ -27,19 +28,77 @@ const COPILOT_EXAMPLES = [
 ];
 
 const METRICS = [
-  { key: "leads", label: "Leads", fmt: v => Math.round(v).toLocaleString(), color: "#6366f1" },
-  { key: "booked", label: "Bookings", fmt: v => Math.round(v).toLocaleString(), color: "#0ea5e9" },
-  { key: "canceled", label: "Canceled Jobs", fmt: v => Math.round(v).toLocaleString(), color: "#f43f5e", invert: true },
-  { key: "completed", label: "Completed Jobs", fmt: v => Math.round(v).toLocaleString(), color: "#10b981" },
-  { key: "revenue", label: "Revenue", fmt: v => "$" + Math.round(v).toLocaleString(), color: "#f59e0b" },
-  { key: "bookingRate", label: "Booking Rate", fmt: v => (v * 100).toFixed(1) + "%", color: "#8b5cf6" },
-  { key: "cancelRate", label: "Cancel Rate", fmt: v => (v * 100).toFixed(1) + "%", color: "#ef4444", invert: true },
-  { key: "conversionRate", label: "Conversion Rate", fmt: v => (v * 100).toFixed(1) + "%", color: "#14b8a6" },
-  { key: "aov", label: "AOV", fmt: v => "$" + Math.round(v).toLocaleString(), color: "#f97316" }
+  {
+    key: "leads",
+    label: "Leads",
+    fmt: v => Math.round(v).toLocaleString(),
+    color: "#6366f1"
+  },
+  {
+    key: "booked",
+    label: "Bookings",
+    fmt: v => Math.round(v).toLocaleString(),
+    color: "#0ea5e9"
+  },
+  {
+    key: "canceled",
+    label: "Canceled Jobs",
+    fmt: v => Math.round(v).toLocaleString(),
+    color: "#f43f5e",
+    invert: true
+  },
+  {
+    key: "completed",
+    label: "Completed Jobs",
+    fmt: v => Math.round(v).toLocaleString(),
+    color: "#10b981"
+  },
+  {
+    key: "revenue",
+    label: "Revenue",
+    fmt: v => "$" + Math.round(v).toLocaleString(),
+    color: "#f59e0b"
+  },
+  {
+    key: "bookingRate",
+    label: "Booking Rate",
+    fmt: v => (v * 100).toFixed(1) + "%",
+    color: "#8b5cf6"
+  },
+  {
+    key: "cancelRate",
+    label: "Cancel Rate",
+    fmt: v => (v * 100).toFixed(1) + "%",
+    color: "#ef4444",
+    invert: true
+  },
+  {
+    key: "conversionRate",
+    label: "Conversion Rate",
+    fmt: v => (v * 100).toFixed(1) + "%",
+    color: "#14b8a6"
+  },
+  {
+    key: "aov",
+    label: "AOV",
+    fmt: v => "$" + Math.round(v).toLocaleString(),
+    color: "#f97316"
+  }
 ];
 
-const SHARE_INCOMPATIBLE = new Set(["bookingRate", "cancelRate", "conversionRate", "aov"]);
-const ADDITIVE_METRICS = new Set(["leads", "booked", "canceled", "completed", "revenue"]);
+const SHARE_INCOMPATIBLE = new Set([
+  "bookingRate",
+  "cancelRate",
+  "conversionRate",
+  "aov"
+]);
+const ADDITIVE_METRICS = new Set([
+  "leads",
+  "booked",
+  "canceled",
+  "completed",
+  "revenue"
+]);
 
 const CAT_COLORS = {
   Core: "#6366f1",
@@ -51,16 +110,126 @@ const CAT_COLORS = {
 };
 
 const FALLBACK = [
-  { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Atlanta", "Channel Category": "Core", leads: 54, jobs_booked: 12, canceled_jobs: 2, invoiced_customer_price: 4087, jobs_completed: 9 },
-  { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Austin", "Channel Category": "Core", leads: 36, jobs_booked: 13, canceled_jobs: 0, invoiced_customer_price: 5766, jobs_completed: 10 },
-  { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Dallas", "Channel Category": "Core", leads: 86, jobs_booked: 22, canceled_jobs: 1, invoiced_customer_price: 6318, jobs_completed: 14 },
-  { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Dallas", "Channel Category": "GBL", leads: 8, jobs_booked: 1, canceled_jobs: 0, invoiced_customer_price: 0, jobs_completed: 0 },
-  { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Dallas", "Channel Category": "Referral", leads: 6, jobs_booked: 3, canceled_jobs: 0, invoiced_customer_price: 0, jobs_completed: 0 },
-  { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Houston", "Channel Category": "Core", leads: 53, jobs_booked: 13, canceled_jobs: 1, invoiced_customer_price: 3884, jobs_completed: 10 },
-  { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Nashville", "Channel Category": "Core", leads: 22, jobs_booked: 9, canceled_jobs: 1, invoiced_customer_price: 3541, jobs_completed: 7 },
-  { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Orlando", "Channel Category": "Core", leads: 21, jobs_booked: 7, canceled_jobs: 2, invoiced_customer_price: 1885, jobs_completed: 4 },
-  { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "San Antonio", "Channel Category": "Core", leads: 23, jobs_booked: 6, canceled_jobs: 1, invoiced_customer_price: 2169, jobs_completed: 5 },
-  { Month: "2024-10-01T05:00:00.000Z", Week: "2024-09-30T05:00:00.000Z", Day: "2024-10-01T05:00:00.000Z", market: "Tampa", "Channel Category": "Core", leads: 17, jobs_booked: 5, canceled_jobs: 2, invoiced_customer_price: 1987, jobs_completed: 4 }
+  {
+    Month: "2024-10-01T05:00:00.000Z",
+    Week: "2024-09-30T05:00:00.000Z",
+    Day: "2024-10-01T05:00:00.000Z",
+    market: "Atlanta",
+    "Channel Category": "Core",
+    leads: 54,
+    jobs_booked: 12,
+    canceled_jobs: 2,
+    revenue: 4087,
+    jobs_completed: 9
+  },
+  {
+    Month: "2024-10-01T05:00:00.000Z",
+    Week: "2024-09-30T05:00:00.000Z",
+    Day: "2024-10-01T05:00:00.000Z",
+    market: "Austin",
+    "Channel Category": "Core",
+    leads: 36,
+    jobs_booked: 13,
+    canceled_jobs: 0,
+    revenue: 5766,
+    jobs_completed: 10
+  },
+  {
+    Month: "2024-10-01T05:00:00.000Z",
+    Week: "2024-09-30T05:00:00.000Z",
+    Day: "2024-10-01T05:00:00.000Z",
+    market: "Dallas",
+    "Channel Category": "Core",
+    leads: 86,
+    jobs_booked: 22,
+    canceled_jobs: 1,
+    revenue: 6318,
+    jobs_completed: 14
+  },
+  {
+    Month: "2024-10-01T05:00:00.000Z",
+    Week: "2024-09-30T05:00:00.000Z",
+    Day: "2024-10-01T05:00:00.000Z",
+    market: "Dallas",
+    "Channel Category": "GBL",
+    leads: 8,
+    jobs_booked: 1,
+    canceled_jobs: 0,
+    revenue: 0,
+    jobs_completed: 0
+  },
+  {
+    Month: "2024-10-01T05:00:00.000Z",
+    Week: "2024-09-30T05:00:00.000Z",
+    Day: "2024-10-01T05:00:00.000Z",
+    market: "Dallas",
+    "Channel Category": "Referral",
+    leads: 6,
+    jobs_booked: 3,
+    canceled_jobs: 0,
+    revenue: 0,
+    jobs_completed: 0
+  },
+  {
+    Month: "2024-10-01T05:00:00.000Z",
+    Week: "2024-09-30T05:00:00.000Z",
+    Day: "2024-10-01T05:00:00.000Z",
+    market: "Houston",
+    "Channel Category": "Core",
+    leads: 53,
+    jobs_booked: 13,
+    canceled_jobs: 1,
+    revenue: 3884,
+    jobs_completed: 10
+  },
+  {
+    Month: "2024-10-01T05:00:00.000Z",
+    Week: "2024-09-30T05:00:00.000Z",
+    Day: "2024-10-01T05:00:00.000Z",
+    market: "Nashville",
+    "Channel Category": "Core",
+    leads: 22,
+    jobs_booked: 9,
+    canceled_jobs: 1,
+    revenue: 3541,
+    jobs_completed: 7
+  },
+  {
+    Month: "2024-10-01T05:00:00.000Z",
+    Week: "2024-09-30T05:00:00.000Z",
+    Day: "2024-10-01T05:00:00.000Z",
+    market: "Orlando",
+    "Channel Category": "Core",
+    leads: 21,
+    jobs_booked: 7,
+    canceled_jobs: 2,
+    revenue: 1885,
+    jobs_completed: 4
+  },
+  {
+    Month: "2024-10-01T05:00:00.000Z",
+    Week: "2024-09-30T05:00:00.000Z",
+    Day: "2024-10-01T05:00:00.000Z",
+    market: "San Antonio",
+    "Channel Category": "Core",
+    leads: 23,
+    jobs_booked: 6,
+    canceled_jobs: 1,
+    revenue: 2169,
+    jobs_completed: 5
+  },
+  {
+    Month: "2024-10-01T05:00:00.000Z",
+    Week: "2024-09-30T05:00:00.000Z",
+    Day: "2024-10-01T05:00:00.000Z",
+    market: "Tampa",
+    "Channel Category": "Core",
+    leads: 17,
+    jobs_booked: 5,
+    canceled_jobs: 2,
+    revenue: 1987,
+    jobs_completed: 4
+  }
 ];
 
 const TARGET_DATA = [
@@ -716,27 +885,45 @@ function buildGroupedShareSeries(rows, period, metricKey, groupKey) {
 
 function fmtLabel(label, period) {
   if (period === "day") {
-    return new Date(label + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return new Date(label + "T12:00:00").toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric"
+    });
   }
   if (period === "week") {
-    return "W" + new Date(label + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return "W" + new Date(label + "T12:00:00").toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric"
+    });
   }
   const [y, m] = label.split("-");
-  return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][parseInt(m, 10) - 1] + " '" + y.slice(2);
+  return (
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][
+      parseInt(m, 10) - 1
+    ] +
+    " '" +
+    y.slice(2)
+  );
+}
+
+function normalizeDateString(value) {
+  if (!value) return "";
+  if (typeof value !== "string") return value;
+  return value.includes("T") ? value : value.replace(" ", "T");
 }
 
 function mapRows(d) {
   return d.map(r => ({
-    date: r.Day || r.date || r.Month || "",
-    Week: r.Week || r.Day || r.date || "",
-    Month: r.Month || r.Day || r.date || "",
+    date: normalizeDateString(r.Day || r.date || r.Month || ""),
+    Week: normalizeDateString(r.Week || r.Day || r.date || ""),
+    Month: normalizeDateString(r.Month || r.Day || r.date || ""),
     market: r.market || "",
     cat: r["Channel Category"] || "Other",
     leads: Number(r.leads) || 0,
     booked: Number(r.jobs_booked) || 0,
     canceled: Number(r.canceled_jobs) || 0,
     completed: Number(r.jobs_completed) || 0,
-    revenue: Number(r.invoiced_customer_price) || 0
+    revenue: Number(r.Revenue ?? r.revenue ?? r.revenue) || 0
   }));
 }
 
@@ -756,7 +943,7 @@ function getRowDate(row) {
 
 function getWeekStartFromDate(d) {
   const x = startOfDay(d);
-  const day = x.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const day = x.getDay();
   const diffToMonday = day === 0 ? -6 : 1 - day;
   x.setDate(x.getDate() + diffToMonday);
   return x;
@@ -794,7 +981,7 @@ function getPeriodEndDate(periodKey, period) {
 }
 
 function countWeekdaysBetween(startDate, endDate) {
-  const counts = [0, 0, 0, 0, 0, 0, 0]; // Sun..Sat
+  const counts = [0, 0, 0, 0, 0, 0, 0];
   if (!startDate || !endDate || endDate < startDate) return counts;
 
   const d = startOfDay(startDate);
@@ -813,7 +1000,7 @@ function sumArray(arr) {
 }
 
 function getMetricTotalByWeekday(rows, metricKey) {
-  const totals = [0, 0, 0, 0, 0, 0, 0]; // Sun..Sat
+  const totals = [0, 0, 0, 0, 0, 0, 0];
 
   rows.forEach(r => {
     const d = getRowDate(r);
@@ -825,29 +1012,17 @@ function getMetricTotalByWeekday(rows, metricKey) {
 }
 
 function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays = 90) {
-
-  if (!rows?.length) {
-    return null;
-  }
-  if (period !== "week" && period !== "month") {
-    return null;
-  }
-  if (!ADDITIVE_METRICS.has(metricKey)) {
-    return null;
-  }
+  if (!rows?.length) return null;
+  if (period !== "week" && period !== "month") return null;
+  if (!ADDITIVE_METRICS.has(metricKey)) return null;
 
   const allPeriodKeys = rows
     .map(r => getPeriodKey(r, period))
     .filter(Boolean)
     .sort();
 
-
   const currentPeriodKey = allPeriodKeys.slice(-1)[0];
-
-
-  if (!currentPeriodKey) {
-    return null;
-  }
+  if (!currentPeriodKey) return null;
 
   const grouped = {};
   rows.forEach(r => {
@@ -858,50 +1033,29 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
   });
 
   const currentRows = grouped[currentPeriodKey] || [];
-
-  if (!currentRows.length) {
-    return null;
-  }
+  if (!currentRows.length) return null;
 
   const currentDates = currentRows
     .map(getRowDate)
     .filter(Boolean)
     .sort((a, b) => a - b);
 
-
   const currentMaxDate = currentDates.slice(-1)[0];
-
-  if (!currentMaxDate) {
-    return null;
-  }
+  if (!currentMaxDate) return null;
 
   const currentPeriodStart = getPeriodStartDate(currentPeriodKey, period);
   const currentPeriodEnd = getPeriodEndDate(currentPeriodKey, period);
-
-
-  if (!currentPeriodStart || !currentPeriodEnd) {
-    return null;
-  }
+  if (!currentPeriodStart || !currentPeriodEnd) return null;
 
   const lookbackStart = new Date(currentMaxDate);
   lookbackStart.setDate(lookbackStart.getDate() - lookbackDays);
   const lookbackStartDay = startOfDay(lookbackStart);
 
-
-  const currentElapsedWeekdayCounts = countWeekdaysBetween(
-    currentPeriodStart,
-    currentMaxDate
-  );
-
-  const fullCurrentPeriodWeekdayCounts = countWeekdaysBetween(
-    currentPeriodStart,
-    currentPeriodEnd
-  );
-
+  const currentElapsedWeekdayCounts = countWeekdaysBetween(currentPeriodStart, currentMaxDate);
+  const fullCurrentPeriodWeekdayCounts = countWeekdaysBetween(currentPeriodStart, currentPeriodEnd);
 
   const elapsedDays = sumArray(currentElapsedWeekdayCounts);
   const totalDays = sumArray(fullCurrentPeriodWeekdayCounts);
-
 
   const currentActual = currentRows.reduce(
     (sum, r) => sum + (Number(r[metricKey]) || 0),
@@ -917,12 +1071,9 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
       return startOfDay(bucketStart).getTime() >= lookbackStartDay.getTime();
     });
 
-
   const shareDetails = historicalKeys.map(key => {
     const group = grouped[key];
-    if (!group?.length) {
-      return { key, skipped: "no group" };
-    }
+    if (!group?.length) return { key, skipped: "no group" };
 
     const periodStart = getPeriodStartDate(key, period);
     const periodEnd = getPeriodEndDate(key, period);
@@ -950,6 +1101,7 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     for (let i = 0; i < 7; i++) {
       const fullCount = fullWeekdayCounts[i] || 0;
       const elapsedCount = currentElapsedWeekdayCounts[i] || 0;
+
       if (!fullCount || !elapsedCount) {
         contributionByWeekday.push({
           weekday: i,
@@ -990,17 +1142,13 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     };
   });
 
-
-  const shares = shareDetails
-    .filter(d => d.valid)
-    .map(d => d.share);
-
+  const shares = shareDetails.filter(d => d.valid).map(d => d.share);
 
   if (!shares.length) {
     const fallbackPct = totalDays > 0 ? elapsedDays / totalDays : null;
     const projected = fallbackPct > 0 ? currentActual / fallbackPct : currentActual;
 
-    const result = {
+    return {
       elapsed: elapsedDays,
       total: totalDays,
       pct: fallbackPct,
@@ -1013,15 +1161,12 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
       elapsedWeekdayCounts: currentElapsedWeekdayCounts,
       fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
     };
-
-    
-    return result;
   }
 
   const historicalPct = shares.reduce((a, b) => a + b, 0) / shares.length;
   const projected = historicalPct > 0 ? currentActual / historicalPct : currentActual;
 
-  const result = {
+  return {
     elapsed: elapsedDays,
     total: totalDays,
     pct: historicalPct,
@@ -1037,11 +1182,7 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     elapsedWeekdayCounts: currentElapsedWeekdayCounts,
     fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
   };
-
-  
-  return result;
 }
-  
 
 function applyProjectionToAggregate(agg, pacingByMetric) {
   if (!agg) return agg;
@@ -1095,7 +1236,7 @@ function applyProjectionToBreakdownSeriesFromRaw(rows, period, groupKey) {
 }
 
 async function loadData() {
-const dataUrls = [DATA_URL];
+  const dataUrls = [DATA_URL];
   const targetUrls = ["/target.json", "target.json"];
 
   let mainData = null;
@@ -1197,7 +1338,13 @@ function Sparkline({ data, metricKey, color, pacing }) {
   const h = 28;
 
   const pts = vals
-    .map((v, i) => `${((i / (vals.length - 1)) * w).toFixed(1)},${(h - ((v - min) / range) * h).toFixed(1)}`)
+    .map(
+      (v, i) =>
+        `${((i / (vals.length - 1)) * w).toFixed(1)},${(
+          h -
+          ((v - min) / range) * h
+        ).toFixed(1)}`
+    )
     .join(" ");
 
   return React.createElement(
@@ -1503,13 +1650,17 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
           stroke: "#e5e7eb",
           strokeWidth: "1"
         }),
-        React.createElement("text", {
-          x: pL - 6,
-          y: y + 4,
-          textAnchor: "end",
-          fontSize: "10",
-          fill: "#9ca3af"
-        }, fmtY(tick))
+        React.createElement(
+          "text",
+          {
+            x: pL - 6,
+            y: y + 4,
+            textAnchor: "end",
+            fontSize: "10",
+            fill: "#9ca3af"
+          },
+          fmtY(tick)
+        )
       );
     }),
 
@@ -1535,14 +1686,18 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
             fill: "#111827",
             opacity: 0.96
           }),
-          React.createElement("text", {
-            x: tooltipLeft + tooltipWidth / 2,
-            y: tooltipTop + 14,
-            textAnchor: "middle",
-            fontSize: "9.5",
-            fill: "#fff",
-            fontWeight: "600"
-          }, tooltipLabel)
+          React.createElement(
+            "text",
+            {
+              x: tooltipLeft + tooltipWidth / 2,
+              y: tooltipTop + 14,
+              textAnchor: "middle",
+              fontSize: "9.5",
+              fill: "#fff",
+              fontWeight: "600"
+            },
+            tooltipLabel
+          )
         )
       : null,
 
@@ -1606,8 +1761,13 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
               React.createElement("circle", {
                 cx: xP(i),
                 cy: yP(v),
-                r: hoveredIndex === i ? 5 : (i === lastIdx && hasProjection ? 4 : 3),
-                fill: hoveredIndex === i ? "#111827" : (i === lastIdx && hasProjection ? "#3b82f6" : metric.color),
+                r: hoveredIndex === i ? 5 : i === lastIdx && hasProjection ? 4 : 3,
+                fill:
+                  hoveredIndex === i
+                    ? "#111827"
+                    : i === lastIdx && hasProjection
+                    ? "#3b82f6"
+                    : metric.color,
                 stroke: "#fff",
                 strokeWidth: "1.5"
               }),
@@ -1635,27 +1795,35 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
                   rx: "4",
                   fill: "#3b82f6"
                 }),
-                React.createElement("text", {
-                  x: xP(lastIdx),
-                  y: yP(vals[lastIdx]) - 12,
-                  textAnchor: "middle",
-                  fontSize: "9",
-                  fill: "#fff",
-                  fontWeight: "700"
-                }, "Proj " + fmtY(vals[lastIdx]))
+                React.createElement(
+                  "text",
+                  {
+                    x: xP(lastIdx),
+                    y: yP(vals[lastIdx]) - 12,
+                    textAnchor: "middle",
+                    fontSize: "9",
+                    fill: "#fff",
+                    fontWeight: "700"
+                  },
+                  "Proj " + fmtY(vals[lastIdx])
+                )
               )
             : null,
 
           vals.map((v, i) =>
             i % step === 0
-              ? React.createElement("text", {
-                  key: "x_" + i,
-                  x: xP(i),
-                  y: H - 6,
-                  textAnchor: "middle",
-                  fontSize: "9",
-                  fill: "#9ca3af"
-                }, fmtLabel(data[i].label, period))
+              ? React.createElement(
+                  "text",
+                  {
+                    key: "x_" + i,
+                    x: xP(i),
+                    y: H - 6,
+                    textAnchor: "middle",
+                    fontSize: "9",
+                    fill: "#9ca3af"
+                  },
+                  fmtLabel(data[i].label, period)
+                )
               : null
           )
         )
@@ -1677,7 +1845,7 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
                 width: bW,
                 height: Math.max(barH, 0),
                 rx: "3",
-                fill: hoveredIndex === i ? "#111827" : (isProj ? "#3b82f6" : metric.color),
+                fill: hoveredIndex === i ? "#111827" : isProj ? "#3b82f6" : metric.color,
                 opacity: isProj ? 1 : 0.88
               }),
               React.createElement("rect", {
@@ -1702,30 +1870,39 @@ function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
                       rx: "4",
                       fill: "#3b82f6"
                     }),
-                    React.createElement("text", {
-                      x,
-                      y: y - 9,
-                      textAnchor: "middle",
-                      fontSize: "9",
-                      fill: "#fff",
-                      fontWeight: "700"
-                    }, "Proj")
+                    React.createElement(
+                      "text",
+                      {
+                        x,
+                        y: y - 9,
+                        textAnchor: "middle",
+                        fontSize: "9",
+                        fill: "#fff",
+                        fontWeight: "700"
+                      },
+                      "Proj"
+                    )
                   )
                 : null,
               i % step === 0
-                ? React.createElement("text", {
-                    x,
-                    y: H - 6,
-                    textAnchor: "middle",
-                    fontSize: "9",
-                    fill: "#9ca3af"
-                  }, fmtLabel(data[i].label, period))
+                ? React.createElement(
+                    "text",
+                    {
+                      x,
+                      y: H - 6,
+                      textAnchor: "middle",
+                      fontSize: "9",
+                      fill: "#9ca3af"
+                    },
+                    fmtLabel(data[i].label, period)
+                  )
                 : null
             );
           })
         )
   );
 }
+
 function FunnelChart({ curr, prev, period, pacingByMetric }) {
   const steps = [
     { key: "leads", label: "Leads", color: "#6366f1" },
@@ -1808,33 +1985,49 @@ function FunnelChart({ curr, prev, period, pacingByMetric }) {
                   flexShrink: 0
                 }
               }),
-              React.createElement("span", {
-                style: { fontSize: 13, fontWeight: 700, color: "#111827" }
-              }, step.label),
+              React.createElement(
+                "span",
+                { style: { fontSize: 13, fontWeight: 700, color: "#111827" } },
+                step.label
+              ),
               pctOfLeads !== null
-                ? React.createElement("span", {
-                    style: { fontSize: 11, color: "#9ca3af", marginLeft: 2 }
-                  }, "(" + pctOfLeads + "% of Leads)")
+                ? React.createElement(
+                    "span",
+                    {
+                      style: {
+                        fontSize: 11,
+                        color: "#9ca3af",
+                        marginLeft: 2
+                      }
+                    },
+                    "(" + pctOfLeads + "% of Leads)"
+                  )
                 : null
             ),
             React.createElement(
               "div",
               { style: { display: "flex", alignItems: "center", gap: 8 } },
-              React.createElement("span", {
-                style: { fontSize: 13, fontWeight: 700, color: "#111827" }
-              }, Math.round(val).toLocaleString()),
+              React.createElement(
+                "span",
+                { style: { fontSize: 13, fontWeight: 700, color: "#111827" } },
+                Math.round(val).toLocaleString()
+              ),
               prevVal > 0
-                ? React.createElement("span", {
-                    style: {
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: good ? "#10b981" : "#f43f5e",
-                      background: good ? "#ecfdf5" : "#fff1f2",
-                      padding: "1px 6px",
-                      borderRadius: 20,
-                      whiteSpace: "nowrap"
-                    }
-                  }, (good ? "▲" : "▼") + Math.abs(change).toFixed(1) + "%")
+                ? React.createElement(
+                    "span",
+                    {
+                      style: {
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: good ? "#10b981" : "#f43f5e",
+                        background: good ? "#ecfdf5" : "#fff1f2",
+                        padding: "1px 6px",
+                        borderRadius: 20,
+                        whiteSpace: "nowrap"
+                      }
+                    },
+                    (good ? "▲" : "▼") + Math.abs(change).toFixed(1) + "%"
+                  )
                 : null
             )
           ),
@@ -1957,9 +2150,11 @@ function ComparisonChart({ curr, prev, period, pacingByMetric }) {
               display: "inline-block"
             }
           }),
-          React.createElement("span", {
-            style: { color: "#6b7280", fontWeight: 600 }
-          }, "Projected current " + pl)
+          React.createElement(
+            "span",
+            { style: { color: "#6b7280", fontWeight: 600 } },
+            "Projected current " + pl
+          )
         ),
         React.createElement(
           "span",
@@ -1974,9 +2169,11 @@ function ComparisonChart({ curr, prev, period, pacingByMetric }) {
               display: "inline-block"
             }
           }),
-          React.createElement("span", {
-            style: { color: "#9ca3af", fontWeight: 600 }
-          }, "Prior " + pl)
+          React.createElement(
+            "span",
+            { style: { color: "#9ca3af", fontWeight: 600 } },
+            "Prior " + pl
+          )
         )
       )
     ),
@@ -2031,22 +2228,30 @@ function ComparisonChart({ curr, prev, period, pacingByMetric }) {
             fill: kpi.color,
             opacity: 0.9
           }),
-          React.createElement("text", {
-            x: cx,
-            y: H - 4,
-            textAnchor: "middle",
-            fontSize: "9",
-            fill: "#9ca3af"
-          }, kpi.label),
+          React.createElement(
+            "text",
+            {
+              x: cx,
+              y: H - 4,
+              textAnchor: "middle",
+              fontSize: "9",
+              fill: "#9ca3af"
+            },
+            kpi.label
+          ),
           pVal > 0
-            ? React.createElement("text", {
-                x: cx,
-                y: Math.min(cy, py) - 5,
-                textAnchor: "middle",
-                fontSize: "8.5",
-                fill: good ? "#10b981" : "#f43f5e",
-                fontWeight: "700"
-              }, (good ? "▲" : "▼") + Math.abs(change).toFixed(1) + "%")
+            ? React.createElement(
+                "text",
+                {
+                  x: cx,
+                  y: Math.min(cy, py) - 5,
+                  textAnchor: "middle",
+                  fontSize: "8.5",
+                  fill: good ? "#10b981" : "#f43f5e",
+                  fontWeight: "700"
+                },
+                (good ? "▲" : "▼") + Math.abs(change).toFixed(1) + "%"
+              )
             : null
         );
       })
@@ -2085,17 +2290,18 @@ function ChatOverlay({ open, onClose, rawData, period, market, chanCat }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, aiLoading]);
 
-  const sendMessage = useCallback((question) => {
-    if (aiLoading || !question.trim()) return;
+  const sendMessage = useCallback(
+    question => {
+      if (aiLoading || !question.trim()) return;
 
-    setAiLoading(true);
+      setAiLoading(true);
 
-    const useFullDataset = shouldUseFullDataset(question);
-    const aiMarket = useFullDataset ? "All Markets" : market;
-    const aiChannel = useFullDataset ? "All Channels" : chanCat;
-    const scopedAgg = getScopedAggregates(rawData, period, aiMarket, aiChannel);
+      const useFullDataset = shouldUseFullDataset(question);
+      const aiMarket = useFullDataset ? "All Markets" : market;
+      const aiChannel = useFullDataset ? "All Channels" : chanCat;
+      const scopedAgg = getScopedAggregates(rawData, period, aiMarket, aiChannel);
 
-    const systemCtx = `
+      const systemCtx = `
 You are a business analyst for NuBrakes.
 
 Use the aggregated dataset below as the only source of truth.
@@ -2142,33 +2348,35 @@ ${scopedAgg.seriesByMarket ? `Time series by market:\n${JSON.stringify(scopedAgg
 ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedAgg.seriesByChannel)}\n` : ""}
 `;
 
-    setChatHistory(h => [...h, { role: "user", text: question }]);
+      setChatHistory(h => [...h, { role: "user", text: question }]);
 
-    callAPI([
-      { role: "system", content: systemCtx },
-      {
-        role: "user",
-        content: `Question: ${question}\n\nAnswer clearly and concisely using the scoped aggregated data.`
-      }
-    ])
-      .then(d => {
-        const t =
-          d.output_text ||
-          (d.output || [])
-            .flatMap(item => item.content || [])
-            .map(c => c.text || "")
-            .join("");
+      callAPI([
+        { role: "system", content: systemCtx },
+        {
+          role: "user",
+          content: `Question: ${question}\n\nAnswer clearly and concisely using the scoped aggregated data.`
+        }
+      ])
+        .then(d => {
+          const t =
+            d.output_text ||
+            (d.output || [])
+              .flatMap(item => item.content || [])
+              .map(c => c.text || "")
+              .join("");
 
-        setChatHistory(h => [...h, { role: "assistant", text: t || "No response." }]);
-      })
-      .catch(err => {
-        console.error(err);
-        setChatHistory(h => [...h, { role: "assistant", text: `Error: ${err.message}` }]);
-      })
-      .finally(() => {
-        setAiLoading(false);
-      });
-  }, [aiLoading, rawData, period, market, chanCat]);
+          setChatHistory(h => [...h, { role: "assistant", text: t || "No response." }]);
+        })
+        .catch(err => {
+          console.error(err);
+          setChatHistory(h => [...h, { role: "assistant", text: `Error: ${err.message}` }]);
+        })
+        .finally(() => {
+          setAiLoading(false);
+        });
+    },
+    [aiLoading, rawData, period, market, chanCat]
+  );
 
   if (!open) return null;
 
@@ -2182,7 +2390,7 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
   return React.createElement(
     "div",
     { style: shellStyle },
-    (isPhone || isTablet) ? React.createElement("div", { style: getBackdropStyle(), onClick: onClose }) : null,
+    isPhone || isTablet ? React.createElement("div", { style: getBackdropStyle(), onClick: onClose }) : null,
     React.createElement(
       "div",
       {
@@ -2215,25 +2423,33 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
           React.createElement(
             "div",
             { style: { minWidth: 0 } },
-            React.createElement("div", {
-              style: {
-                fontSize: compact ? 14 : 13,
-                fontWeight: 700,
-                color: "#fff",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis"
-              }
-            }, "AI Insights"),
-            React.createElement("div", {
-              style: {
-                fontSize: 11,
-                color: "#9ca3af",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis"
-              }
-            }, `${period} · ${market} · ${chanCat}`)
+            React.createElement(
+              "div",
+              {
+                style: {
+                  fontSize: compact ? 14 : 13,
+                  fontWeight: 700,
+                  color: "#fff",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis"
+                }
+              },
+              "AI Insights"
+            ),
+            React.createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 11,
+                  color: "#9ca3af",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis"
+                }
+              },
+              `${period} · ${market} · ${chanCat}`
+            )
           )
         ),
         React.createElement(
@@ -2336,15 +2552,14 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
               )
             )
           : null,
-        chatHistory.map((msg, i) => {
-          const isUser = msg.role === "user";
-          return React.createElement(
+        chatHistory.map((msg, i) =>
+          React.createElement(
             "div",
             {
               key: i,
               style: {
                 display: "flex",
-                justifyContent: isUser ? "flex-end" : "flex-start"
+                justifyContent: msg.role === "user" ? "flex-end" : "flex-start"
               }
             },
             React.createElement(
@@ -2357,16 +2572,16 @@ ${scopedAgg.seriesByChannel ? `Time series by channel:\n${JSON.stringify(scopedA
                   fontSize: 12,
                   lineHeight: 1.65,
                   whiteSpace: "pre-wrap",
-                  background: isUser ? "#6366f1" : "#f1f5f9",
-                  color: isUser ? "#fff" : "#374151",
-                  borderBottomRightRadius: isUser ? 4 : 14,
-                  borderBottomLeftRadius: isUser ? 14 : 4
+                  background: msg.role === "user" ? "#6366f1" : "#f1f5f9",
+                  color: msg.role === "user" ? "#fff" : "#374151",
+                  borderBottomRightRadius: msg.role === "user" ? 4 : 14,
+                  borderBottomLeftRadius: msg.role === "user" ? 14 : 4
                 }
               },
               msg.text
             )
-          );
-        }),
+          )
+        ),
         aiLoading
           ? React.createElement(
               "div",
@@ -2705,7 +2920,7 @@ function CopilotOverlay({ open, onClose }) {
   return React.createElement(
     "div",
     { style: shellStyle },
-    (isPhone || isTablet) ? React.createElement("div", { style: getBackdropStyle(), onClick: onClose }) : null,
+    isPhone || isTablet ? React.createElement("div", { style: getBackdropStyle(), onClick: onClose }) : null,
     React.createElement(
       "div",
       {
@@ -3222,10 +3437,12 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
   const actualByChannel = buildProjectedActualByChannel(filtered.length ? filtered : rawData, "month");
   const targetMap = buildMetricTargetMap(targetRows, monthKey);
 
-  const monthLabel =
-    monthKey
-      ? new Date(monthKey + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })
-      : "Current Month";
+  const monthLabel = monthKey
+    ? new Date(monthKey + "-01T12:00:00").toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric"
+      })
+    : "Current Month";
 
   const topMetrics = [
     { key: "revenue", label: "Total revenue", formatter: fmtMoneyCompact },
@@ -3246,7 +3463,11 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
     padding: "18px 20px"
   };
 
-  const kpiGridCols = isPhone ? "1fr" : isTablet ? "repeat(2,minmax(0,1fr))" : "repeat(4,minmax(0,1fr))";
+  const kpiGridCols = isPhone
+    ? "1fr"
+    : isTablet
+    ? "repeat(2,minmax(0,1fr))"
+    : "repeat(4,minmax(0,1fr))";
   const row2Cols = isPhone ? "1fr" : "repeat(2,minmax(0,1fr))";
   const row3Cols = isPhone ? "1fr" : "repeat(2,minmax(0,1fr))";
 
@@ -3265,24 +3486,32 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
           padding: "16px"
         }
       },
-      h("div", {
-        style: {
-          fontSize: 11,
-          color: "#6b7280",
-          marginBottom: 6,
-          textTransform: "uppercase",
-          letterSpacing: ".04em"
-        }
-      }, metric.label),
-      h("div", {
-        style: {
-          fontSize: 26,
-          fontWeight: 600,
-          lineHeight: 1,
-          marginBottom: 6,
-          color: "#111827"
-        }
-      }, metric.formatter(actual)),
+      h(
+        "div",
+        {
+          style: {
+            fontSize: 11,
+            color: "#6b7280",
+            marginBottom: 6,
+            textTransform: "uppercase",
+            letterSpacing: ".04em"
+          }
+        },
+        metric.label
+      ),
+      h(
+        "div",
+        {
+          style: {
+            fontSize: 26,
+            fontWeight: 600,
+            lineHeight: 1,
+            marginBottom: 6,
+            color: "#111827"
+          }
+        },
+        metric.formatter(actual)
+      ),
       h(
         "div",
         {
@@ -3298,7 +3527,11 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
           { style: pillStyle(delta) },
           deltaFmt(delta, metric.key === "revenue" || metric.key === "aov" ? "$" : "")
         ),
-        h("span", { style: { color: "#9ca3af" } }, "vs " + metric.formatter(target) + " target")
+        h(
+          "span",
+          { style: { color: "#9ca3af" } },
+          "vs " + metric.formatter(target) + " target"
+        )
       )
     );
   }
@@ -3328,16 +3561,20 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
             marginBottom: 14
           }
         },
-        h("h3", {
-          style: {
-            fontSize: 13,
-            fontWeight: 600,
-            color: "#6b7280",
-            textTransform: "uppercase",
-            letterSpacing: ".04em",
-            margin: 0
-          }
-        }, title)
+        h(
+          "h3",
+          {
+            style: {
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#6b7280",
+              textTransform: "uppercase",
+              letterSpacing: ".04em",
+              margin: 0
+            }
+          },
+          title
+        )
       ),
       h(
         "div",
@@ -3352,17 +3589,21 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
               "tr",
               null,
               ["Channel", "Pacing", "Target", "% to target", "Delta"].map((col, i) =>
-                h("th", {
-                  key: col,
-                  style: {
-                    fontSize: 11,
-                    color: "#6b7280",
-                    fontWeight: 600,
-                    textAlign: i === 0 ? "left" : "right",
-                    padding: "0 0 8px",
-                    borderBottom: "0.5px solid #e5e7eb"
-                  }
-                }, col)
+                h(
+                  "th",
+                  {
+                    key: col,
+                    style: {
+                      fontSize: 11,
+                      color: "#6b7280",
+                      fontWeight: 600,
+                      textAlign: i === 0 ? "left" : "right",
+                      padding: "0 0 8px",
+                      borderBottom: "0.5px solid #e5e7eb"
+                    }
+                  },
+                  col
+                )
               )
             )
           ),
@@ -3381,7 +3622,11 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
                       borderBottom: "0.5px solid #e5e7eb"
                     }
                   },
-                  h("div", { style: { fontSize: 12, color: "#111827", marginBottom: 4 } }, r.ch),
+                  h(
+                    "div",
+                    { style: { fontSize: 12, color: "#111827", marginBottom: 4 } },
+                    r.ch
+                  ),
                   h(
                     "div",
                     {
@@ -3499,8 +3744,16 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
                   justifyContent: "flex-end"
                 }
               },
-              h("span", { style: { fontSize: 14, fontWeight: 600 } }, actual ? fmtMoney(actual) : "—"),
-              h("span", { style: { fontSize: 11, color: "#6b7280" } }, "target " + fmtMoney(target)),
+              h(
+                "span",
+                { style: { fontSize: 14, fontWeight: 600 } },
+                actual ? fmtMoney(actual) : "—"
+              ),
+              h(
+                "span",
+                { style: { fontSize: 11, color: "#6b7280" } },
+                "target " + fmtMoney(target)
+              ),
               h("span", { style: pillStyle(delta) }, deltaFmt(delta, "$"))
             )
           ),
@@ -3562,13 +3815,17 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
               }
             },
             h("span", { style: { fontSize: 12, color: "#111827" } }, ch),
-            h("span", {
-              style: {
-                fontSize: 12,
-                fontWeight: 600,
-                color: barColor(avg)
-              }
-            }, avg !== null ? avg + "%" : "—")
+            h(
+              "span",
+              {
+                style: {
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: barColor(avg)
+                }
+              },
+              avg !== null ? avg + "%" : "—"
+            )
           ),
           h(
             "div",
@@ -3630,21 +3887,29 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
       h(
         "div",
         null,
-        h("h1", {
-          style: {
-            fontSize: 20,
-            fontWeight: 500,
-            margin: 0,
-            color: "#111827"
-          }
-        }, "Performance overview"),
-        h("p", {
-          style: {
-            fontSize: 12,
-            color: "#6b7280",
-            margin: "2px 0 0"
-          }
-        }, monthLabel + " — historical pacing projection vs target")
+        h(
+          "h1",
+          {
+            style: {
+              fontSize: 20,
+              fontWeight: 500,
+              margin: 0,
+              color: "#111827"
+            }
+          },
+          "Performance overview"
+        ),
+        h(
+          "p",
+          {
+            style: {
+              fontSize: 12,
+              color: "#6b7280",
+              margin: "2px 0 0"
+            }
+          },
+          monthLabel + " — historical pacing projection vs target"
+        )
       ),
       h(
         "span",
@@ -3703,34 +3968,46 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
       h(
         "div",
         { style: rowCardStyle },
-        h("div", { style: { marginBottom: 12 } },
-          h("h3", {
-            style: {
-              fontSize: 13,
-              fontWeight: 600,
-              color: "#6b7280",
-              textTransform: "uppercase",
-              letterSpacing: ".04em",
-              margin: 0
-            }
-          }, "AOV by channel")
+        h(
+          "div",
+          { style: { marginBottom: 12 } },
+          h(
+            "h3",
+            {
+              style: {
+                fontSize: 13,
+                fontWeight: 600,
+                color: "#6b7280",
+                textTransform: "uppercase",
+                letterSpacing: ".04em",
+                margin: 0
+              }
+            },
+            "AOV by channel"
+          )
         ),
         renderAov()
       ),
       h(
         "div",
         { style: rowCardStyle },
-        h("div", { style: { marginBottom: 12 } },
-          h("h3", {
-            style: {
-              fontSize: 13,
-              fontWeight: 600,
-              color: "#6b7280",
-              textTransform: "uppercase",
-              letterSpacing: ".04em",
-              margin: 0
-            }
-          }, "Channel health snapshot")
+        h(
+          "div",
+          { style: { marginBottom: 12 } },
+          h(
+            "h3",
+            {
+              style: {
+                fontSize: 13,
+                fontWeight: 600,
+                color: "#6b7280",
+                textTransform: "uppercase",
+                letterSpacing: ".04em",
+                margin: 0
+              }
+            },
+            "Channel health snapshot"
+          )
         ),
         renderHealth()
       )
@@ -3815,7 +4092,12 @@ function Dashboard() {
   }, [rawData]);
 
   const filtered = useMemo(
-    () => rawData.filter(r => (market === "All Markets" || r.market === market) && (chanCat === "All Channels" || r.cat === chanCat)),
+    () =>
+      rawData.filter(
+        r =>
+          (market === "All Markets" || r.market === market) &&
+          (chanCat === "All Channels" || r.cat === chanCat)
+      ),
     [rawData, market, chanCat]
   );
 
@@ -3837,7 +4119,12 @@ function Dashboard() {
   const getRowsForLabel = useCallback(
     label =>
       filtered.filter(r => {
-        const key = period === "day" ? r.date.slice(0, 10) : period === "week" ? r.Week.slice(0, 10) : r.Month.slice(0, 7);
+        const key =
+          period === "day"
+            ? r.date.slice(0, 10)
+            : period === "week"
+            ? r.Week.slice(0, 10)
+            : r.Month.slice(0, 7);
         return key === label;
       }),
     [filtered, period]
@@ -3863,7 +4150,8 @@ function Dashboard() {
 
   const defaultPacing = pacingByMetric.revenue || null;
   const pct = (c, p) => (p ? ((c - p) / p) * 100 : 0);
-  const periodLabel = period === "day" ? "Last 60 Days" : period === "week" ? "Last 12 Weeks" : "Last 12 Months";
+  const periodLabel =
+    period === "day" ? "Last 60 Days" : period === "week" ? "Last 12 Weeks" : "Last 12 Months";
   const isRateOrAov = key => key.includes("Rate") || key === "aov";
   const selMetric = METRICS.find(m => m.key === trendKey) || METRICS[0];
   const shareBlocked = SHARE_INCOMPATIBLE.has(trendKey);
@@ -3896,10 +4184,17 @@ function Dashboard() {
       const s = new Date(latest + "T12:00:00");
       const e = new Date(s);
       e.setDate(e.getDate() + 6);
-      return s.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " – " + e.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      return (
+        s.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
+        " – " +
+        e.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      );
     }
 
-    return new Date(latest + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    return new Date(latest + "-01T12:00:00").toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric"
+    });
   }, [series, period]);
 
   const openFeedbackForm = useCallback(() => {
@@ -3961,76 +4256,76 @@ function Dashboard() {
   };
 
   const pacingBanner =
-  defaultPacing && (period === "week" || period === "month")
-    ? React.createElement(
-        "div",
-        {
-          style: {
-            marginBottom: 12,
-            padding: isPhone ? "10px 12px" : "10px 14px",
-            borderRadius: 12,
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            display: "flex",
-            alignItems: isPhone ? "flex-start" : "center",
-            justifyContent: "space-between",
-            gap: 10,
-            flexDirection: isPhone ? "column" : "row"
-          }
-        },
-        React.createElement(
+    defaultPacing && (period === "week" || period === "month")
+      ? React.createElement(
           "div",
-          { style: { minWidth: 0 } },
+          {
+            style: {
+              marginBottom: 12,
+              padding: isPhone ? "10px 12px" : "10px 14px",
+              borderRadius: 12,
+              background: "#fff",
+              border: "1px solid #e5e7eb",
+              display: "flex",
+              alignItems: isPhone ? "flex-start" : "center",
+              justifyContent: "space-between",
+              gap: 10,
+              flexDirection: isPhone ? "column" : "row"
+            }
+          },
+          React.createElement(
+            "div",
+            { style: { minWidth: 0 } },
+            React.createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#111827",
+                  marginBottom: 2
+                }
+              },
+              "Overview cards show pacing"
+            )
+          ),
           React.createElement(
             "div",
             {
               style: {
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#111827",
-                marginBottom: 2
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 9px",
+                borderRadius: 999,
+                background: "#f8fafc",
+                border: "1px solid #e5e7eb",
+                flexShrink: 0
               }
             },
-            "Overview cards show pacing"
-          )
-        ),
-        React.createElement(
-          "div",
-          {
-            style: {
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "5px 9px",
-              borderRadius: 999,
-              background: "#f8fafc",
-              border: "1px solid #e5e7eb",
-              flexShrink: 0
-            }
-          },
-          React.createElement("div", {
-            style: {
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: "#3b82f6"
-            }
-          }),
-          React.createElement(
-            "span",
-            {
+            React.createElement("div", {
               style: {
-                fontSize: 11,
-                fontWeight: 700,
-                color: "#3b82f6",
-                whiteSpace: "nowrap"
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: "#3b82f6"
               }
-            },
-            "Pacing"
+            }),
+            React.createElement(
+              "span",
+              {
+                style: {
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "#3b82f6",
+                  whiteSpace: "nowrap"
+                }
+              },
+              "Pacing"
+            )
           )
         )
-      )
-    : null;
+      : null;
 
   const floatingBase = {
     position: "fixed",
@@ -4059,7 +4354,18 @@ function Dashboard() {
       React.createElement(
         "div",
         { style: { marginBottom: 20 } },
-        React.createElement("h1", { style: { margin: 0, fontSize: isPhone ? 18 : 20, fontWeight: 700, color: "#111827" } }, "NuBrakes KPI Dashboard"),
+        React.createElement(
+          "h1",
+          {
+            style: {
+              margin: 0,
+              fontSize: isPhone ? 18 : 20,
+              fontWeight: 700,
+              color: "#111827"
+            }
+          },
+          "NuBrakes KPI Dashboard"
+        ),
         React.createElement(
           "p",
           { style: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" } },
@@ -4071,9 +4377,12 @@ function Dashboard() {
             (tab === "overview"
               ? overviewLabel
               : tab === "vsTarget"
-              ? (getLatestMonthKey(filtered || rawData)
-                  ? new Date(getLatestMonthKey(filtered || rawData) + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })
-                  : "Current Month")
+              ? getLatestMonthKey(filtered || rawData)
+                ? new Date(getLatestMonthKey(filtered || rawData) + "-01T12:00:00").toLocaleDateString(
+                    "en-US",
+                    { month: "long", year: "numeric" }
+                  )
+                : "Current Month"
               : periodLabel)
         ),
         React.createElement(
@@ -4092,15 +4401,46 @@ function Dashboard() {
                 border: "1px solid " + (usingFallback ? "#fed7aa" : "#6ee7b7")
               }
             },
-            React.createElement("div", { style: { width: 6, height: 6, borderRadius: "50%", background: usingFallback ? "#f97316" : "#10b981" } }),
-            React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: usingFallback ? "#c2410c" : "#065f46" } }, usingFallback ? "Sample Data" : "Live Data")
+            React.createElement("div", {
+              style: {
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: usingFallback ? "#f97316" : "#10b981"
+              }
+            }),
+            React.createElement(
+              "span",
+              {
+                style: {
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: usingFallback ? "#c2410c" : "#065f46"
+                }
+              },
+              usingFallback ? "Sample Data" : "Live Data"
+            )
           ),
-          usingFallback ? React.createElement("span", { style: { fontSize: 11, color: "#c2410c" } }, "⚠️ Live data unavailable") : null
+          usingFallback
+            ? React.createElement(
+                "span",
+                { style: { fontSize: 11, color: "#c2410c" } },
+                "⚠️ Live data unavailable"
+              )
+            : null
         )
       ),
       React.createElement(
         "div",
-        { style: { display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap", alignItems: "center" } },
+        {
+          style: {
+            display: "flex",
+            gap: 8,
+            marginBottom: 18,
+            flexWrap: "wrap",
+            alignItems: "center"
+          }
+        },
         ["day", "week", "month"].map(p =>
           React.createElement(
             "button",
@@ -4122,33 +4462,51 @@ function Dashboard() {
             p.charAt(0).toUpperCase() + p.slice(1)
           )
         ),
-        React.createElement("select", { value: market, onChange: e => setMarket(e.target.value), style: selectStyle }, React.createElement("option", null, "All Markets"), ...markets.map(m => React.createElement("option", { key: m }, m))),
-        React.createElement("select", { value: chanCat, onChange: e => setChanCat(e.target.value), style: selectStyle }, React.createElement("option", null, "All Channels"), ...chanCats.map(c => React.createElement("option", { key: c }, c)))
+        React.createElement(
+          "select",
+          { value: market, onChange: e => setMarket(e.target.value), style: selectStyle },
+          React.createElement("option", null, "All Markets"),
+          ...markets.map(m => React.createElement("option", { key: m }, m))
+        ),
+        React.createElement(
+          "select",
+          { value: chanCat, onChange: e => setChanCat(e.target.value), style: selectStyle },
+          React.createElement("option", null, "All Channels"),
+          ...chanCats.map(c => React.createElement("option", { key: c }, c))
+        )
       ),
       React.createElement(
         "div",
-        { style: { display: "flex", marginBottom: 22, borderBottom: "1.5px solid #e5e7eb", overflowX: "auto" } },
-        [["overview", "Overview"], ["trends", "Trends"], ["vsTarget", "vs Target"]].map(([t, label]) =>
-          React.createElement(
-            "button",
-            {
-              key: t,
-              onClick: () => setTab(t),
-              style: {
-                padding: "8px 20px",
-                border: "none",
-                background: "none",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-                color: tab === t ? "#111827" : "#9ca3af",
-                borderBottom: tab === t ? "2px solid #111827" : "2px solid transparent",
-                marginBottom: -1.5,
-                whiteSpace: "nowrap"
-              }
-            },
-            label
-          )
+        {
+          style: {
+            display: "flex",
+            marginBottom: 22,
+            borderBottom: "1.5px solid #e5e7eb",
+            overflowX: "auto"
+          }
+        },
+        [["overview", "Overview"], ["trends", "Trends"], ["vsTarget", "vs Target"]].map(
+          ([t, label]) =>
+            React.createElement(
+              "button",
+              {
+                key: t,
+                onClick: () => setTab(t),
+                style: {
+                  padding: "8px 20px",
+                  border: "none",
+                  background: "none",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  color: tab === t ? "#111827" : "#9ca3af",
+                  borderBottom: tab === t ? "2px solid #111827" : "2px solid transparent",
+                  marginBottom: -1.5,
+                  whiteSpace: "nowrap"
+                }
+              },
+              label
+            )
         )
       ),
       tab === "overview"
@@ -4158,7 +4516,18 @@ function Dashboard() {
             pacingBanner,
             React.createElement(
               "div",
-              { style: { display: "grid", gridTemplateColumns: isPhone ? "1fr" : isTablet ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fill,minmax(190px,1fr))", gap: 12, marginBottom: 20 } },
+              {
+                style: {
+                  display: "grid",
+                  gridTemplateColumns: isPhone
+                    ? "1fr"
+                    : isTablet
+                    ? "repeat(2,minmax(0,1fr))"
+                    : "repeat(auto-fill,minmax(190px,1fr))",
+                  gap: 12,
+                  marginBottom: 20
+                }
+              },
               METRICS.map(m => {
                 const actual = curr[m.key] || 0;
                 const pacing = pacingByMetric[m.key] || null;
@@ -4171,13 +4540,63 @@ function Dashboard() {
                 return React.createElement(
                   "div",
                   { key: m.key, style: { ...baseCardStyle, padding: "14px 16px" } },
-                  React.createElement("div", { style: { fontSize: 10, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 } }, m.label),
-                  React.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: "#111827", marginBottom: 8 } }, m.fmt(displayValue)),
                   React.createElement(
                     "div",
-                    { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 8 } },
-                    React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: good ? "#10b981" : "#f43f5e", background: good ? "#ecfdf5" : "#fff1f2", padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" } }, (good ? "▲" : "▼") + " " + Math.abs(change).toFixed(1) + "%"),
-                    React.createElement(Sparkline, { data: series, metricKey: m.key, color: m.color, pacing })
+                    {
+                      style: {
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: "#9ca3af",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        marginBottom: 5
+                      }
+                    },
+                    m.label
+                  ),
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        fontSize: 22,
+                        fontWeight: 700,
+                        color: "#111827",
+                        marginBottom: 8
+                      }
+                    },
+                    m.fmt(displayValue)
+                  ),
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-end",
+                        gap: 8
+                      }
+                    },
+                    React.createElement(
+                      "span",
+                      {
+                        style: {
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: good ? "#10b981" : "#f43f5e",
+                          background: good ? "#ecfdf5" : "#fff1f2",
+                          padding: "2px 7px",
+                          borderRadius: 20,
+                          whiteSpace: "nowrap"
+                        }
+                      },
+                      (good ? "▲" : "▼") + " " + Math.abs(change).toFixed(1) + "%"
+                    ),
+                    React.createElement(Sparkline, {
+                      data: series,
+                      metricKey: m.key,
+                      color: m.color,
+                      pacing
+                    })
                   ),
                   pacing && !isRateOrAov(m.key)
                     ? React.createElement(
@@ -4192,8 +4611,22 @@ function Dashboard() {
                             alignItems: "center"
                           }
                         },
-                        React.createElement("span", { style: { fontSize: 10, color: "#9ca3af" } }, "Actual to date"),
-                        React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: "#6b7280" } }, m.fmt(actual))
+                        React.createElement(
+                          "span",
+                          { style: { fontSize: 10, color: "#9ca3af" } },
+                          "Actual to date"
+                        ),
+                        React.createElement(
+                          "span",
+                          {
+                            style: {
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: "#6b7280"
+                            }
+                          },
+                          m.fmt(actual)
+                        )
                       )
                     : null
                 );
@@ -4201,7 +4634,17 @@ function Dashboard() {
             ),
             React.createElement(
               "div",
-              { style: { display: "grid", gridTemplateColumns: isPhone ? "1fr" : isTablet ? "1fr" : "repeat(2,minmax(0,1fr))", gap: 16 } },
+              {
+                style: {
+                  display: "grid",
+                  gridTemplateColumns: isPhone
+                    ? "1fr"
+                    : isTablet
+                    ? "1fr"
+                    : "repeat(2,minmax(0,1fr))",
+                  gap: 16
+                }
+              },
               React.createElement(FunnelChart, { curr, prev, period, pacingByMetric }),
               React.createElement(ComparisonChart, { curr, prev, period, pacingByMetric })
             )
@@ -4213,7 +4656,16 @@ function Dashboard() {
             null,
             React.createElement(
               "div",
-              { style: { display: "flex", justifyContent: "space-between", alignItems: isPhone ? "stretch" : "center", flexDirection: isPhone ? "column" : "row", gap: 12, marginBottom: 16 } },
+              {
+                style: {
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: isPhone ? "stretch" : "center",
+                  flexDirection: isPhone ? "column" : "row",
+                  gap: 12,
+                  marginBottom: 16
+                }
+              },
               React.createElement(
                 "div",
                 { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
@@ -4240,7 +4692,15 @@ function Dashboard() {
               ),
               React.createElement(
                 "div",
-                { style: { display: "flex", gap: 4, background: "#f1f5f9", borderRadius: 8, padding: 3 } },
+                {
+                  style: {
+                    display: "flex",
+                    gap: 4,
+                    background: "#f1f5f9",
+                    borderRadius: 8,
+                    padding: 3
+                  }
+                },
                 [["line", "╱ Line"], ["bar", "▬ Bar"]].map(([t, lbl]) =>
                   React.createElement(
                     "button",
@@ -4266,10 +4726,27 @@ function Dashboard() {
             ),
             React.createElement(
               "div",
-              { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" } },
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 16,
+                  flexWrap: "wrap"
+                }
+              },
               React.createElement(
                 "div",
-                { style: { display: "flex", gap: 4, background: shareBlocked ? "#f8fafc" : "#f1f5f9", borderRadius: 8, padding: 3, opacity: shareBlocked ? 0.5 : 1 } },
+                {
+                  style: {
+                    display: "flex",
+                    gap: 4,
+                    background: shareBlocked ? "#f8fafc" : "#f1f5f9",
+                    borderRadius: 8,
+                    padding: 3,
+                    opacity: shareBlocked ? 0.5 : 1
+                  }
+                },
                 [["absolute", "Absolute"], ["share", "% Share"]].map(([v, lbl]) =>
                   React.createElement(
                     "button",
@@ -4286,9 +4763,18 @@ function Dashboard() {
                         fontSize: 12,
                         fontWeight: 600,
                         cursor: shareBlocked && v === "share" ? "not-allowed" : "pointer",
-                        background: trendView === v && !(shareBlocked && v === "share") ? "#fff" : "transparent",
-                        color: trendView === v && !(shareBlocked && v === "share") ? "#111827" : "#9ca3af",
-                        boxShadow: trendView === v && !(shareBlocked && v === "share") ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                        background:
+                          trendView === v && !(shareBlocked && v === "share")
+                            ? "#fff"
+                            : "transparent",
+                        color:
+                          trendView === v && !(shareBlocked && v === "share")
+                            ? "#111827"
+                            : "#9ca3af",
+                        boxShadow:
+                          trendView === v && !(shareBlocked && v === "share")
+                            ? "0 1px 3px rgba(0,0,0,0.1)"
+                            : "none",
                         whiteSpace: "nowrap"
                       }
                     },
@@ -4299,7 +4785,15 @@ function Dashboard() {
               trendView === "share" && !shareBlocked
                 ? React.createElement(
                     "div",
-                    { style: { display: "flex", gap: 4, background: "#f1f5f9", borderRadius: 8, padding: 3 } },
+                    {
+                      style: {
+                        display: "flex",
+                        gap: 4,
+                        background: "#f1f5f9",
+                        borderRadius: 8,
+                        padding: 3
+                      }
+                    },
                     [["channel", "By Channel"], ["market", "By Market"]].map(([v, lbl]) =>
                       React.createElement(
                         "button",
@@ -4315,7 +4809,10 @@ function Dashboard() {
                             cursor: "pointer",
                             background: shareDimension === v ? "#fff" : "transparent",
                             color: shareDimension === v ? "#111827" : "#9ca3af",
-                            boxShadow: shareDimension === v ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                            boxShadow:
+                              shareDimension === v
+                                ? "0 1px 3px rgba(0,0,0,0.1)"
+                                : "none",
                             whiteSpace: "nowrap"
                           }
                         },
@@ -4327,10 +4824,26 @@ function Dashboard() {
               shareBlocked
                 ? React.createElement(
                     "span",
-                    { style: { fontSize: 11, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4 } },
+                    {
+                      style: {
+                        fontSize: 11,
+                        color: "#9ca3af",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4
+                      }
+                    },
                     React.createElement(
                       "svg",
-                      { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", stroke: "#9ca3af", strokeWidth: "2", strokeLinecap: "round" },
+                      {
+                        width: 13,
+                        height: 13,
+                        viewBox: "0 0 24 24",
+                        fill: "none",
+                        stroke: "#9ca3af",
+                        strokeWidth: "2",
+                        strokeLinecap: "round"
+                      },
                       React.createElement("circle", { cx: "12", cy: "12", r: "10" }),
                       React.createElement("line", { x1: "12", y1: "8", x2: "12", y2: "12" }),
                       React.createElement("line", { x1: "12", y1: "16", x2: "12.01", y2: "16" })
@@ -4346,13 +4859,49 @@ function Dashboard() {
                   React.createElement(
                     "div",
                     { style: { ...baseCardStyle, marginBottom: 12 } },
-                    React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 2 } }, selMetric.label + " — " + periodLabel),
-                    React.createElement("div", { style: { fontSize: 11, color: "#9ca3af", marginBottom: 14 } }, market + " · " + chanCat),
-                    React.createElement(TrendChart, { data: series, metricKey: trendKey, metric: selMetric, period, chartType, pacing: selectedMetricPacing })
+                    React.createElement(
+                      "div",
+                      {
+                        style: {
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "#111827",
+                          marginBottom: 2
+                        }
+                      },
+                      selMetric.label + " — " + periodLabel
+                    ),
+                    React.createElement(
+                      "div",
+                      {
+                        style: {
+                          fontSize: 11,
+                          color: "#9ca3af",
+                          marginBottom: 14
+                        }
+                      },
+                      market + " · " + chanCat
+                    ),
+                    React.createElement(TrendChart, {
+                      data: series,
+                      metricKey: trendKey,
+                      metric: selMetric,
+                      period,
+                      chartType,
+                      pacing: selectedMetricPacing
+                    })
                   ),
                   React.createElement(
                     "div",
-                    { style: { display: "grid", gridTemplateColumns: isPhone ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fill,minmax(140px,1fr))", gap: 10 } },
+                    {
+                      style: {
+                        display: "grid",
+                        gridTemplateColumns: isPhone
+                          ? "repeat(2,minmax(0,1fr))"
+                          : "repeat(auto-fill,minmax(140px,1fr))",
+                        gap: 10
+                      }
+                    },
                     ["Peak", "Average", "Latest", "Projected"].map((lbl, li) => {
                       const vals = series.map(d => d[trendKey] || 0);
                       const latest2 = vals.length ? vals[vals.length - 1] : 0;
@@ -4362,15 +4911,45 @@ function Dashboard() {
                       else if (li === 1) v = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
                       else if (li === 2) v = latest2;
                       else {
-                        if (!selectedMetricPacing || (period !== "week" && period !== "month") || isRateOrAov(trendKey)) return null;
+                        if (!selectedMetricPacing || (period !== "week" && period !== "month") || isRateOrAov(trendKey)) {
+                          return null;
+                        }
                         v = selectedMetricPacing.projected ?? latest2;
                       }
 
                       return React.createElement(
                         "div",
-                        { key: lbl, style: { ...baseCardStyle, borderTop: li === 3 ? "2px solid #3b82f6" : "" } },
-                        React.createElement("div", { style: { fontSize: 10, color: li === 3 ? "#3b82f6" : "#9ca3af", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 } }, lbl + (li === 3 && selectedMetricPacing ? " (hist)" : "")),
-                        React.createElement("div", { style: { fontSize: isPhone ? 18 : 20, fontWeight: 700, color: li === 3 ? "#3b82f6" : selMetric.color } }, v !== null ? selMetric.fmt(v) : "—")
+                        {
+                          key: lbl,
+                          style: {
+                            ...baseCardStyle,
+                            borderTop: li === 3 ? "2px solid #3b82f6" : ""
+                          }
+                        },
+                        React.createElement(
+                          "div",
+                          {
+                            style: {
+                              fontSize: 10,
+                              color: li === 3 ? "#3b82f6" : "#9ca3af",
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              marginBottom: 4
+                            }
+                          },
+                          lbl + (li === 3 && selectedMetricPacing ? " (hist)" : "")
+                        ),
+                        React.createElement(
+                          "div",
+                          {
+                            style: {
+                              fontSize: isPhone ? 18 : 20,
+                              fontWeight: 700,
+                              color: li === 3 ? "#3b82f6" : selMetric.color
+                            }
+                          },
+                          v !== null ? selMetric.fmt(v) : "—"
+                        )
                       );
                     })
                   )
@@ -4382,16 +4961,38 @@ function Dashboard() {
                   { style: { ...baseCardStyle, padding: "16px 18px 20px" } },
                   React.createElement(
                     "div",
-                    { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 } },
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "flex-start",
+                        justifyContent: "space-between",
+                        marginBottom: 14,
+                        flexWrap: "wrap",
+                        gap: 10
+                      }
+                    },
                     React.createElement(
                       "div",
                       null,
                       React.createElement(
                         "div",
-                        { style: { fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 2 } },
-                        selMetric.label + " — % Share by " + (shareDimension === "market" ? "Market" : "Channel")
+                        {
+                          style: {
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "#111827",
+                            marginBottom: 2
+                          }
+                        },
+                        selMetric.label +
+                          " — % Share by " +
+                          (shareDimension === "market" ? "Market" : "Channel")
                       ),
-                      React.createElement("div", { style: { fontSize: 11, color: "#9ca3af" } }, periodLabel + " · " + market)
+                      React.createElement(
+                        "div",
+                        { style: { fontSize: 11, color: "#9ca3af" } },
+                        periodLabel + " · " + market
+                      )
                     ),
                     React.createElement(
                       "div",
@@ -4399,7 +5000,15 @@ function Dashboard() {
                       activeShareGroups.map(g =>
                         React.createElement(
                           "span",
-                          { key: g, style: { display: "flex", alignItems: "center", gap: 5, fontSize: 12 } },
+                          {
+                            key: g,
+                            style: {
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 5,
+                              fontSize: 12
+                            }
+                          },
                           React.createElement("span", {
                             style: {
                               width: 24,
@@ -4409,7 +5018,16 @@ function Dashboard() {
                               display: "inline-block"
                             }
                           }),
-                          React.createElement("span", { style: { color: "#374151", fontWeight: 600 } }, g)
+                          React.createElement(
+                            "span",
+                            {
+                              style: {
+                                color: "#374151",
+                                fontWeight: 600
+                              }
+                            },
+                            g
+                          )
                         )
                       )
                     )
@@ -4423,7 +5041,14 @@ function Dashboard() {
                   activeShareGroups.length > 0
                     ? React.createElement(
                         "div",
-                        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))", gap: 8, marginTop: 16 } },
+                        {
+                          style: {
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))",
+                            gap: 8,
+                            marginTop: 16
+                          }
+                        },
                         activeShareGroups.map(g => {
                           const vals = activeShareData.series.map(d => d[g] || 0);
                           const latest = vals.length ? vals[vals.length - 1] : 0;
@@ -4433,10 +5058,25 @@ function Dashboard() {
 
                           return React.createElement(
                             "div",
-                            { key: g, style: { background: "#f8fafc", borderRadius: 10, padding: "10px 12px", border: "1px solid #f1f5f9" } },
+                            {
+                              key: g,
+                              style: {
+                                background: "#f8fafc",
+                                borderRadius: 10,
+                                padding: "10px 12px",
+                                border: "1px solid #f1f5f9"
+                              }
+                            },
                             React.createElement(
                               "div",
-                              { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
+                              {
+                                style: {
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  marginBottom: 4
+                                }
+                              },
                               React.createElement("div", {
                                 style: {
                                   width: 8,
@@ -4445,17 +5085,41 @@ function Dashboard() {
                                   background: getSeriesColor(g, shareDimension)
                                 }
                               }),
-                              React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: "#6b7280" } }, g)
+                              React.createElement(
+                                "span",
+                                {
+                                  style: {
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    color: "#6b7280"
+                                  }
+                                },
+                                g
+                              )
                             ),
-                            React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: "#111827" } }, latest.toFixed(1) + "%"),
-                            React.createElement("div", {
-                              style: {
-                                fontSize: 11,
-                                fontWeight: 600,
-                                color: good ? "#10b981" : "#f43f5e",
-                                marginTop: 2
-                              }
-                            }, (good ? "▲" : "▼") + Math.abs(chg).toFixed(1) + "% vs prior")
+                            React.createElement(
+                              "div",
+                              {
+                                style: {
+                                  fontSize: 18,
+                                  fontWeight: 700,
+                                  color: "#111827"
+                                }
+                              },
+                              latest.toFixed(1) + "%"
+                            ),
+                            React.createElement(
+                              "div",
+                              {
+                                style: {
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: good ? "#10b981" : "#f43f5e",
+                                  marginTop: 2
+                                }
+                              },
+                              (good ? "▲" : "▼") + Math.abs(chg).toFixed(1) + "% vs prior"
+                            )
                           );
                         })
                       )
@@ -4501,15 +5165,15 @@ function Dashboard() {
         }
       },
       React.createElement("img", {
-            src: "/forms.png",
-            alt: "forms",
-            style: {
-              width: 28,
-              height: 28,
-              objectFit: "contain",
-              display: "block"
-            }
-          })
+        src: "/forms.png",
+        alt: "forms",
+        style: {
+          width: 28,
+          height: 28,
+          objectFit: "contain",
+          display: "block"
+        }
+      })
     ),
 
     React.createElement(
@@ -4605,9 +5269,15 @@ function Dashboard() {
               strokeLinecap: "round",
               strokeLinejoin: "round"
             },
-            React.createElement("path", { d: "M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z" }),
-            React.createElement("path", { d: "M19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9L19 16z" }),
-            React.createElement("path", { d: "M5 14l.9 2.1L8 17l-2.1.9L5 20l-.9-2.1L2 17l2.1-.9L5 14z" })
+            React.createElement("path", {
+              d: "M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z"
+            }),
+            React.createElement("path", {
+              d: "M19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9L19 16z"
+            }),
+            React.createElement("path", {
+              d: "M5 14l.9 2.1L8 17l-2.1.9L5 20l-.9-2.1L2 17l2.1-.9L5 14z"
+            })
           )
     )
   );
