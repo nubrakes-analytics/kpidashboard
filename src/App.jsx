@@ -2915,7 +2915,7 @@ function CopilotOverlay({ open, onClose }) {
 
   const cardStyle = getOverlayCardStyle({ isPhone, isTablet, maxWidth: 460 });
   const compact = isPhone;
-  const exampleButtons = compact ? COPILOT_EXAMPLES.slice(0, 4) : COPILOT_EXAMPLES.slice(0, 6);
+  const exampleButtons = compact ? COPILOT_EXAMPLES.slice(0, 3) : COPILOT_EXAMPLES.slice(0, 4);
 
   return React.createElement(
     "div",
