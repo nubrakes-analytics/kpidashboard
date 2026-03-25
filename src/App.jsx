@@ -18,12 +18,12 @@ const FEEDBACK_FORM_BASE =
 
 const COPILOT_EXAMPLES = [
   "What changed in lead mix this week?",
-  "Where can I find the ops dashboard?",
   "What was the referral revenue in February 2026?",
-  "Compare GBL and Referral Leads this month?",
   "Which dataset should I use for supply and demand by market?",
+  "Why are completed jobs up/down?",
+  "Where can I find the ops dashboard?",
+  "Compare GBL and Referral Leads this month?",
   "Why is conversion rate down this March?",
-  "Why are completed jobs down?",
   "What does average order value mean?",
 ];
 
