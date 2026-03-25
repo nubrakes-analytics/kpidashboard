@@ -1095,7 +1095,7 @@ function applyProjectionToBreakdownSeriesFromRaw(rows, period, groupKey) {
 }
 
 async function loadData() {
-  const dataUrls = ["/data.json", DATA_URL];
+const dataUrls = [DATA_URL];
   const targetUrls = ["/target.json", "target.json"];
 
   let mainData = null;
