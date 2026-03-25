@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 const DATA_URL =
-  "https://cdn.jsdelivr.net/gh/nubrakes-analytics/NuBrakes-Copilot@main/data/fact_nubrakes_channel_market_kpi_daily.json";
+  "https://raw.githubusercontent.com/nubrakes-analytics/NuBrakes-Copilot/refs/heads/main/data/fact_nubrakes_channel_market_kpi_daily.jsonn";
 const AI_MODEL = "gpt-4.1";
 const AI_ENDPOINT = "/api/ai";
 
