@@ -964,26 +964,7 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
   };
 }
-  const historicalPct = shares.reduce((a, b) => a + b, 0) / shares.length;
-  const projected = historicalPct > 0 ? currentActual / historicalPct : currentActual;
-
-  return {
-    elapsed: elapsedDays,
-    total: totalDays,
-    pct: historicalPct,
-    historicalPct,
-    label:
-      period === "week"
-        ? `Weekday-weighted week pacing`
-        : `Weekday-weighted month pacing`,
-    projected,
-    actual: currentActual,
-    method: "weekday_weighted_historical",
-    sampleSize: shares.length,
-    elapsedWeekdayCounts: currentElapsedWeekdayCounts,
-    fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
-  };
-}
+  
 
 function applyProjectionToAggregate(agg, pacingByMetric) {
   if (!agg) return agg;
