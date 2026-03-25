@@ -826,7 +826,7 @@ function getMetricTotalByWeekday(rows, metricKey) {
   return totals;
 }
 
-function calcHistoricalPacing(period, rows, metricKey = "revenue") {
+function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays = 90) {
   if (!rows?.length) return null;
   if (period !== "week" && period !== "month") return null;
   if (!ADDITIVE_METRICS.has(metricKey)) return null;
@@ -863,6 +863,10 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue") {
 
   if (!currentPeriodStart || !currentPeriodEnd) return null;
 
+  const lookbackStart = new Date(currentMaxDate);
+  lookbackStart.setDate(lookbackStart.getDate() - lookbackDays);
+  const lookbackStartDay = startOfDay(lookbackStart);
+
   const currentElapsedWeekdayCounts = countWeekdaysBetween(
     currentPeriodStart,
     currentMaxDate
@@ -876,14 +880,19 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue") {
   const elapsedDays = sumArray(currentElapsedWeekdayCounts);
   const totalDays = sumArray(fullCurrentPeriodWeekdayCounts);
 
-const currentActual = currentRows.reduce(
-  (sum, r) => sum + (Number(r[metricKey]) || 0),
-  0
-);
-  
+  const currentActual = currentRows.reduce(
+    (sum, r) => sum + (Number(r[metricKey]) || 0),
+    0
+  );
+
   const historicalKeys = Object.keys(grouped)
     .sort()
-    .filter(k => k !== currentPeriodKey);
+    .filter(key => {
+      if (key === currentPeriodKey) return false;
+      const bucketStart = getPeriodStartDate(key, period);
+      if (!bucketStart) return false;
+      return startOfDay(bucketStart).getTime() >= lookbackStartDay.getTime();
+    });
 
   const shares = historicalKeys
     .map(key => {
@@ -925,10 +934,7 @@ const currentActual = currentRows.reduce(
       total: totalDays,
       pct: fallbackPct,
       historicalPct: null,
-      label:
-        period === "week"
-          ? `Weekday-weighted fallback · ${elapsedDays} of ${totalDays} days elapsed`
-          : `Weekday-weighted fallback · ${elapsedDays} of ${totalDays} days elapsed`,
+      label: `Weekday-weighted fallback · ${elapsedDays} of ${totalDays} days elapsed`,
       projected: fallbackPct > 0 ? currentActual / fallbackPct : currentActual,
       actual: currentActual,
       method: "fallback",
@@ -938,6 +944,26 @@ const currentActual = currentRows.reduce(
     };
   }
 
+  const historicalPct = shares.reduce((a, b) => a + b, 0) / shares.length;
+  const projected = historicalPct > 0 ? currentActual / historicalPct : currentActual;
+
+  return {
+    elapsed: elapsedDays,
+    total: totalDays,
+    pct: historicalPct,
+    historicalPct,
+    label:
+      period === "week"
+        ? `Weekday-weighted week pacing`
+        : `Weekday-weighted month pacing`,
+    projected,
+    actual: currentActual,
+    method: "weekday_weighted_historical",
+    sampleSize: shares.length,
+    elapsedWeekdayCounts: currentElapsedWeekdayCounts,
+    fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
+  };
+}
   const historicalPct = shares.reduce((a, b) => a + b, 0) / shares.length;
   const projected = historicalPct > 0 ? currentActual / historicalPct : currentActual;
 
