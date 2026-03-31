@@ -1099,32 +1099,33 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     const contributionByWeekday = [];
 
     for (let i = 0; i < 7; i++) {
-      const fullCount = fullWeekdayCounts[i] || 0;
-      const elapsedCount = currentElapsedWeekdayCounts[i] || 0;
+  const fullCount = fullWeekdayCounts[i] || 0;
+  const elapsedCountRaw = currentElapsedWeekdayCounts[i] || 0;
+  const elapsedCount = Math.min(elapsedCountRaw, fullCount);
 
-      if (!fullCount || !elapsedCount) {
-        contributionByWeekday.push({
-          weekday: i,
-          fullCount,
-          elapsedCount,
-          avgPerWeekdayOccurrence: 0,
-          contribution: 0
-        });
-        continue;
-      }
+  if (!fullCount || !elapsedCount) {
+    contributionByWeekday.push({
+      weekday: i,
+      fullCount,
+      elapsedCount,
+      avgPerWeekdayOccurrence: 0,
+      contribution: 0
+    });
+    continue;
+  }
 
-      const avgPerWeekdayOccurrence = (weekdayTotals[i] || 0) / fullCount;
-      const contribution = avgPerWeekdayOccurrence * elapsedCount;
-      expectedElapsed += contribution;
+  const avgPerWeekdayOccurrence = (weekdayTotals[i] || 0) / fullCount;
+  const contribution = avgPerWeekdayOccurrence * elapsedCount;
+  expectedElapsed += contribution;
 
-      contributionByWeekday.push({
-        weekday: i,
-        fullCount,
-        elapsedCount,
-        avgPerWeekdayOccurrence,
-        contribution
-      });
-    }
+  contributionByWeekday.push({
+    weekday: i,
+    fullCount,
+    elapsedCount,
+    avgPerWeekdayOccurrence,
+    contribution
+  });
+}
 
     const share = expectedElapsed / total;
 
@@ -1163,26 +1164,28 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     };
   }
 
-  const historicalPct = shares.reduce((a, b) => a + b, 0) / shares.length;
-  const projected = historicalPct > 0 ? currentActual / historicalPct : currentActual;
+  const historicalPctRaw = shares.reduce((a, b) => a + b, 0) / shares.length;
+const historicalPct = Math.max(0, Math.min(historicalPctRaw, 1));
+const projectedRaw = historicalPct > 0 ? currentActual / historicalPct : currentActual;
+const projected = Math.max(currentActual, projectedRaw);
 
-  return {
-    elapsed: elapsedDays,
-    total: totalDays,
-    pct: historicalPct,
-    historicalPct,
-    label:
-      period === "week"
-        ? `Weekday-weighted week pacing`
-        : `Weekday-weighted month pacing`,
-    projected,
-    actual: currentActual,
-    method: "weekday_weighted_historical",
-    sampleSize: shares.length,
-    elapsedWeekdayCounts: currentElapsedWeekdayCounts,
-    fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
-  };
-}
+return {
+  elapsed: elapsedDays,
+  total: totalDays,
+  pct: historicalPct,
+  historicalPct,
+  historicalPctRaw,
+  label:
+    period === "week"
+      ? `Weekday-weighted week pacing`
+      : `Weekday-weighted month pacing`,
+  projected,
+  actual: currentActual,
+  method: "weekday_weighted_historical",
+  sampleSize: shares.length,
+  elapsedWeekdayCounts: currentElapsedWeekdayCounts,
+  fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
+};
 
 function applyProjectionToAggregate(agg, pacingByMetric) {
   if (!agg) return agg;
