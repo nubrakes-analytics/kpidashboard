@@ -1011,7 +1011,7 @@ function getMetricTotalByWeekday(rows, metricKey) {
   return totals;
 }
 
-function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays = 90) {
+function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays = 30) {
   if (!rows?.length) return null;
   if (period !== "week" && period !== "month") return null;
   if (!ADDITIVE_METRICS.has(metricKey)) return null;
