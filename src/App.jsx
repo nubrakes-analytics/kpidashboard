@@ -1186,6 +1186,7 @@ return {
   elapsedWeekdayCounts: currentElapsedWeekdayCounts,
   fullWeekdayCounts: fullCurrentPeriodWeekdayCounts
 };
+}
 
 function applyProjectionToAggregate(agg, pacingByMetric) {
   if (!agg) return agg;
