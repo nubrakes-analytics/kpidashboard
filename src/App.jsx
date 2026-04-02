@@ -1048,7 +1048,7 @@ function filterRowsThroughDate(rows, cutoffDate) {
 
 
 
-function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays = 35) {
+function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays = 30) {
   if (!rows?.length) return null;
   if (period !== "week" && period !== "month") return null;
   if (!ADDITIVE_METRICS.has(metricKey)) return null;
