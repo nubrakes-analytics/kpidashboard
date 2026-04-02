@@ -1011,32 +1011,27 @@ function getMetricTotalByWeekday(rows, metricKey) {
   return totals;
 }
 
-function isRowFuture(row, today = new Date()) {
-  const d = getRowDate(row);
-  if (!d) return false;
-  return startOfDay(d).getTime() > startOfDay(today).getTime();
-}
-
-function getLatestActualDate(rows, metricKey, today = new Date()) {
+function getLatestLoadedDate(rows, today = new Date()) {
   const todayTs = startOfDay(today).getTime();
 
   const validDates = rows
-    .filter(r => {
-      const d = getRowDate(r);
-      if (!d) return false;
-      if (startOfDay(d).getTime() > todayTs) return false;
-
-      if (ADDITIVE_METRICS.has(metricKey)) {
-        return (Number(r[metricKey]) || 0) > 0;
-      }
-
-      return true;
-    })
     .map(getRowDate)
     .filter(Boolean)
+    .filter(d => startOfDay(d).getTime() <= todayTs)
     .sort((a, b) => a - b);
 
-  return validDates.length ? validDates[validDates.length - 1] : startOfDay(today);
+  return validDates.length ? validDates[validDates.length - 1] : null;
+}
+
+function filterRowsThroughDate(rows, cutoffDate) {
+  if (!cutoffDate) return [];
+
+  const cutoffTs = startOfDay(cutoffDate).getTime();
+
+  return rows.filter(r => {
+    const d = getRowDate(r);
+    return d && startOfDay(d).getTime() <= cutoffTs;
+  });
 }
 
 
