@@ -1035,13 +1035,37 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
   const currentRows = grouped[currentPeriodKey] || [];
   if (!currentRows.length) return null;
 
-  const currentDates = currentRows
+
+function isRowFuture(row, today = new Date()) {
+  const d = getRowDate(row);
+  if (!d) return false;
+  return startOfDay(d).getTime() > startOfDay(today).getTime();
+}
+
+function getLatestActualDate(rows, metricKey, today = new Date()) {
+  const todayTs = startOfDay(today).getTime();
+
+  const validDates = rows
+    .filter(r => {
+      const d = getRowDate(r);
+      if (!d) return false;
+      if (startOfDay(d).getTime() > todayTs) return false;
+
+      if (ADDITIVE_METRICS.has(metricKey)) {
+        return (Number(r[metricKey]) || 0) > 0;
+      }
+
+      return true;
+    })
     .map(getRowDate)
     .filter(Boolean)
     .sort((a, b) => a - b);
 
-  const currentMaxDate = currentDates.slice(-1)[0];
-  if (!currentMaxDate) return null;
+  return validDates.length ? validDates[validDates.length - 1] : startOfDay(today);
+}
+
+
+  const currentMaxDate = getLatestActualDate(currentRows, metricKey, new Date());
 
   const currentPeriodStart = getPeriodStartDate(currentPeriodKey, period);
   const currentPeriodEnd = getPeriodEndDate(currentPeriodKey, period);
