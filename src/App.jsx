@@ -1011,16 +1011,22 @@ function getMetricTotalByWeekday(rows, metricKey) {
   return totals;
 }
 
-function getLatestLoadedDate(rows, today = new Date()) {
-  const todayTs = startOfDay(today).getTime();
-
+function getLatestLoadedDate(rows, cutoffDate = null) {
   const validDates = rows
     .map(getRowDate)
     .filter(Boolean)
-    .filter(d => startOfDay(d).getTime() <= todayTs)
     .sort((a, b) => a - b);
 
-  return validDates.length ? validDates[validDates.length - 1] : null;
+  if (!validDates.length) return null;
+
+  if (!cutoffDate) {
+    return validDates[validDates.length - 1];
+  }
+
+  const cutoffTs = startOfDay(cutoffDate).getTime();
+  const filtered = validDates.filter(d => startOfDay(d).getTime() <= cutoffTs);
+
+  return filtered.length ? filtered[filtered.length - 1] : null;
 }
 
 function filterRowsThroughDate(rows, cutoffDate) {
@@ -1060,8 +1066,9 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
   const currentRowsAll = grouped[currentPeriodKey] || [];
 if (!currentRowsAll.length) return null;
 
-const currentMaxDate = getLatestLoadedDate(currentRowsAll, new Date());
-if (!currentMaxDate) return null;
+const datasetMaxDate = getLatestLoadedDate(rows);
+const currentMaxDate = getLatestLoadedDate(currentRowsAll, datasetMaxDate);
+  if (!currentMaxDate) return null;
 
 const currentRows = filterRowsThroughDate(currentRowsAll, currentMaxDate);
 if (!currentRows.length) return null;
