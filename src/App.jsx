@@ -372,14 +372,20 @@ function aggregate(rows) {
 function buildProjectedActualByChannel(rows, period = "month") {
   const out = {};
 
+  const latestMonthKey = getLatestMonthKey(rows);
+  const currentPeriodRows =
+    period === "month" ? getMonthRows(rows, latestMonthKey) : rows;
+
   VS_TARGET_CHANNELS.forEach(ch => {
-    const chRows = rows.filter(r => r.cat === ch);
-    const agg = aggregate(chRows);
+    const chHistoryRows = rows.filter(r => r.cat === ch);
+    const chCurrentRows = currentPeriodRows.filter(r => r.cat === ch);
+
+    const agg = aggregate(chCurrentRows);
 
     const pacingByMetric = {
-      leads: calcHistoricalPacing(period, chRows, "leads"),
-      completed: calcHistoricalPacing(period, chRows, "completed"),
-      revenue: calcHistoricalPacing(period, chRows, "revenue")
+      leads: calcHistoricalPacing(period, chHistoryRows, "leads"),
+      completed: calcHistoricalPacing(period, chHistoryRows, "completed"),
+      revenue: calcHistoricalPacing(period, chHistoryRows, "revenue")
     };
 
     const projectedLeads = getProjectedMetricValue("leads", agg.leads, pacingByMetric.leads);
@@ -396,7 +402,7 @@ function buildProjectedActualByChannel(rows, period = "month") {
     };
   });
 
-  const totalAgg = aggregate(rows);
+  const totalAgg = aggregate(currentPeriodRows);
   const totalPacing = {
     leads: calcHistoricalPacing(period, rows, "leads"),
     completed: calcHistoricalPacing(period, rows, "completed"),
