@@ -1098,14 +1098,18 @@ const currentActual = currentRows.reduce(
   0
 );
 
-  const historicalKeys = Object.keys(grouped)
-    .sort()
-    .filter(key => {
-      if (key === currentPeriodKey) return false;
-      const bucketStart = getPeriodStartDate(key, period);
-      if (!bucketStart) return false;
-      return startOfDay(bucketStart).getTime() >= lookbackStartDay.getTime();
-    });
+ const allHistoricalKeys = Object.keys(grouped)
+  .sort()
+  .filter(key => key !== currentPeriodKey);
+
+const historicalKeys =
+  period === "month"
+    ? allHistoricalKeys.slice(-3)
+    : allHistoricalKeys.filter(key => {
+        const bucketStart = getPeriodStartDate(key, period);
+        if (!bucketStart) return false;
+        return startOfDay(bucketStart).getTime() >= lookbackStartDay.getTime();
+      });
 
   const shareDetails = historicalKeys.map(key => {
     const group = grouped[key];
