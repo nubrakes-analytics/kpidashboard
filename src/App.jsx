@@ -372,20 +372,14 @@ function aggregate(rows) {
 function buildProjectedActualByChannel(rows, period = "month") {
   const out = {};
 
-  const latestMonthKey = getLatestMonthKey(rows);
-  const currentPeriodRows =
-    period === "month" ? getMonthRows(rows, latestMonthKey) : rows;
-
   VS_TARGET_CHANNELS.forEach(ch => {
-    const chHistoryRows = rows.filter(r => r.cat === ch);
-    const chCurrentRows = currentPeriodRows.filter(r => r.cat === ch);
-
-    const agg = aggregate(chCurrentRows);
+    const chRows = rows.filter(r => r.cat === ch);
+    const agg = aggregate(chRows);
 
     const pacingByMetric = {
-      leads: calcHistoricalPacing(period, chHistoryRows, "leads"),
-      completed: calcHistoricalPacing(period, chHistoryRows, "completed"),
-      revenue: calcHistoricalPacing(period, chHistoryRows, "revenue")
+      leads: calcHistoricalPacing(period, chRows, "leads"),
+      completed: calcHistoricalPacing(period, chRows, "completed"),
+      revenue: calcHistoricalPacing(period, chRows, "revenue")
     };
 
     const projectedLeads = getProjectedMetricValue("leads", agg.leads, pacingByMetric.leads);
@@ -402,7 +396,7 @@ function buildProjectedActualByChannel(rows, period = "month") {
     };
   });
 
-  const totalAgg = aggregate(currentPeriodRows);
+  const totalAgg = aggregate(rows);
   const totalPacing = {
     leads: calcHistoricalPacing(period, rows, "leads"),
     completed: calcHistoricalPacing(period, rows, "completed"),
@@ -1017,37 +1011,6 @@ function getMetricTotalByWeekday(rows, metricKey) {
   return totals;
 }
 
-function getLatestLoadedDate(rows, cutoffDate = null) {
-  const validDates = rows
-    .map(getRowDate)
-    .filter(Boolean)
-    .sort((a, b) => a - b);
-
-  if (!validDates.length) return null;
-
-  if (!cutoffDate) {
-    return validDates[validDates.length - 1];
-  }
-
-  const cutoffTs = startOfDay(cutoffDate).getTime();
-  const filtered = validDates.filter(d => startOfDay(d).getTime() <= cutoffTs);
-
-  return filtered.length ? filtered[filtered.length - 1] : null;
-}
-
-function filterRowsThroughDate(rows, cutoffDate) {
-  if (!cutoffDate) return [];
-
-  const cutoffTs = startOfDay(cutoffDate).getTime();
-
-  return rows.filter(r => {
-    const d = getRowDate(r);
-    return d && startOfDay(d).getTime() <= cutoffTs;
-  });
-}
-
-
-
 function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays = 30) {
   if (!rows?.length) return null;
   if (period !== "week" && period !== "month") return null;
@@ -1069,47 +1032,44 @@ function calcHistoricalPacing(period, rows, metricKey = "revenue", lookbackDays 
     grouped[key].push(r);
   });
 
-  const currentRowsAll = grouped[currentPeriodKey] || [];
-if (!currentRowsAll.length) return null;
+  const currentRows = grouped[currentPeriodKey] || [];
+  if (!currentRows.length) return null;
 
-const datasetMaxDate = getLatestLoadedDate(rows);
-const currentMaxDate = getLatestLoadedDate(currentRowsAll, datasetMaxDate);
+  const currentDates = currentRows
+    .map(getRowDate)
+    .filter(Boolean)
+    .sort((a, b) => a - b);
+
+  const currentMaxDate = currentDates.slice(-1)[0];
   if (!currentMaxDate) return null;
 
-const currentRows = filterRowsThroughDate(currentRowsAll, currentMaxDate);
-if (!currentRows.length) return null;
+  const currentPeriodStart = getPeriodStartDate(currentPeriodKey, period);
+  const currentPeriodEnd = getPeriodEndDate(currentPeriodKey, period);
+  if (!currentPeriodStart || !currentPeriodEnd) return null;
 
-const currentPeriodStart = getPeriodStartDate(currentPeriodKey, period);
-const currentPeriodEnd = getPeriodEndDate(currentPeriodKey, period);
-if (!currentPeriodStart || !currentPeriodEnd) return null;
+  const lookbackStart = new Date(currentMaxDate);
+  lookbackStart.setDate(lookbackStart.getDate() - lookbackDays);
+  const lookbackStartDay = startOfDay(lookbackStart);
 
-const lookbackStart = new Date(currentMaxDate);
-lookbackStart.setDate(lookbackStart.getDate() - lookbackDays);
-const lookbackStartDay = startOfDay(lookbackStart);
+  const currentElapsedWeekdayCounts = countWeekdaysBetween(currentPeriodStart, currentMaxDate);
+  const fullCurrentPeriodWeekdayCounts = countWeekdaysBetween(currentPeriodStart, currentPeriodEnd);
 
-const currentElapsedWeekdayCounts = countWeekdaysBetween(currentPeriodStart, currentMaxDate);
-const fullCurrentPeriodWeekdayCounts = countWeekdaysBetween(currentPeriodStart, currentPeriodEnd);
+  const elapsedDays = sumArray(currentElapsedWeekdayCounts);
+  const totalDays = sumArray(fullCurrentPeriodWeekdayCounts);
 
-const elapsedDays = sumArray(currentElapsedWeekdayCounts);
-const totalDays = sumArray(fullCurrentPeriodWeekdayCounts);
+  const currentActual = currentRows.reduce(
+    (sum, r) => sum + (Number(r[metricKey]) || 0),
+    0
+  );
 
-const currentActual = currentRows.reduce(
-  (sum, r) => sum + (Number(r[metricKey]) || 0),
-  0
-);
-
- const allHistoricalKeys = Object.keys(grouped)
-  .sort()
-  .filter(key => key !== currentPeriodKey);
-
-const historicalKeys =
-  period === "month"
-    ? allHistoricalKeys.slice(-3)
-    : allHistoricalKeys.filter(key => {
-        const bucketStart = getPeriodStartDate(key, period);
-        if (!bucketStart) return false;
-        return startOfDay(bucketStart).getTime() >= lookbackStartDay.getTime();
-      });
+  const historicalKeys = Object.keys(grouped)
+    .sort()
+    .filter(key => {
+      if (key === currentPeriodKey) return false;
+      const bucketStart = getPeriodStartDate(key, period);
+      if (!bucketStart) return false;
+      return startOfDay(bucketStart).getTime() >= lookbackStartDay.getTime();
+    });
 
   const shareDetails = historicalKeys.map(key => {
     const group = grouped[key];
