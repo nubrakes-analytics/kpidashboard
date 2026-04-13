@@ -3434,12 +3434,42 @@ function CopilotOverlay({ open, onClose }) {
   );
 }
 
-function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
+function VsTargetTab({
+  filtered,
+  rawData,
+  targetRows,
+  isPhone,
+  isTablet,
+  selectedMonth,
+  onMonthChange,
+  monthOptions
+}) {
   const h = React.createElement;
 
-  const monthKey = getLatestMonthKey(filtered.length ? filtered : rawData);
-  const actualByChannel = buildProjectedActualByChannel(filtered.length ? filtered : rawData, "month");
+ const sourceRows = filtered.length ? filtered : rawData;
+const latestMonthKey = getLatestMonthKey(sourceRows);
+const monthKey = selectedMonth || latestMonthKey;
+
+const scopedMonthRows = sourceRows.filter(r => (r.Month || "").slice(0, 7) === monthKey);
+
+const isLatestSelectedMonth = monthKey === latestMonthKey;
+
+const actualByChannel = isLatestSelectedMonth
+  ? buildProjectedActualByChannel(scopedMonthRows, "month")
+  : (() => {
+      const out = {};
+
+      VS_TARGET_CHANNELS.forEach(ch => {
+        out[ch] = aggregate(scopedMonthRows.filter(r => r.cat === ch));
+      });
+
+      out.Total = aggregate(scopedMonthRows);
+      return out;
+    })();
+  
   const targetMap = buildMetricTargetMap(targetRows, monthKey);
+
+  const hasAnyTargetForMonth = Object.keys(targetMap).length > 0;
 
   const monthLabel = monthKey
     ? new Date(monthKey + "-01T12:00:00").toLocaleDateString("en-US", {
@@ -3888,33 +3918,107 @@ function VsTargetTab({ filtered, rawData, targetRows, isPhone, isTablet }) {
           borderBottom: "0.5px solid #e5e7eb"
         }
       },
-      h(
+
+        // header content here
+  ),
+
+  !hasAnyTargetForMonth
+    ? h(
         "div",
-        null,
-        h(
-          "h1",
-          {
-            style: {
-              fontSize: 20,
-              fontWeight: 500,
-              margin: 0,
-              color: "#111827"
-            }
-          },
-          "Performance overview"
-        ),
-        h(
-          "p",
-          {
-            style: {
-              fontSize: 12,
-              color: "#6b7280",
-              margin: "2px 0 0"
-            }
-          },
-          monthLabel + " — historical pacing projection vs target"
-        )
-      ),
+        {
+          style: {
+            marginBottom: 12,
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: "#fff7ed",
+            border: "1px solid #fed7aa",
+            fontSize: 12,
+            color: "#9a3412"
+          }
+        },
+        "No target data found for " + monthLabel + ". Actuals are shown, but target comparisons may appear blank."
+      )
+    : null,
+
+  h(
+    "div",
+    {
+      style: {
+        display: "grid",
+        gridTemplateColumns: kpiGridCols,
+        gap: 12,
+        marginBottom: 16
+      }
+    },
+    topMetrics.map(renderKpi)
+  ),
+      h(
+  "div",
+  {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: isPhone ? "flex-start" : "center",
+      flexDirection: isPhone ? "column" : "row",
+      gap: 10,
+      width: "100%"
+    }
+  },
+  h(
+    "div",
+    null,
+    h(
+      "h1",
+      {
+        style: {
+          fontSize: 20,
+          fontWeight: 500,
+          margin: 0,
+          color: "#111827"
+        }
+      },
+      "Performance overview"
+    ),
+    h(
+      "p",
+      {
+        style: {
+          fontSize: 12,
+          color: "#6b7280",
+          margin: "2px 0 0"
+        }
+      },
+      monthLabel + " — historical pacing projection vs target"
+    )
+  ),
+  h(
+    "select",
+    {
+      value: monthKey,
+      onChange: e => onMonthChange(e.target.value),
+      style: {
+        padding: "9px 12px",
+        borderRadius: 8,
+        border: "1.5px solid #e5e7eb",
+        fontSize: 13,
+        color: "#374151",
+        background: "#fff",
+        cursor: "pointer",
+        minWidth: isPhone ? "100%" : 180
+      }
+    },
+    ...(monthOptions || []).map(m =>
+      h(
+        "option",
+        { key: m, value: m },
+        new Date(m + "-01T12:00:00").toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric"
+        })
+      )
+    )
+  )
+),
       h(
         "span",
         {
@@ -4055,6 +4159,7 @@ function Dashboard() {
   const [chatOpen, setChatOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [targetData, setTargetData] = useState(TARGET_DATA);
+  const [vsTargetMonth, setVsTargetMonth] = useState("");
 
   useEffect(() => {
     if (SHARE_INCOMPATIBLE.has(trendKey) && trendView === "share") {
@@ -4104,6 +4209,18 @@ function Dashboard() {
       ),
     [rawData, market, chanCat]
   );
+
+  const vsTargetMonthOptions = useMemo(() => {
+  const source = filtered.length ? filtered : rawData;
+  return [...new Set(source.map(r => (r.Month || "").slice(0, 7)).filter(Boolean))].sort();
+}, [filtered, rawData]);
+
+useEffect(() => {
+  if (!vsTargetMonthOptions.length) return;
+  if (!vsTargetMonth || !vsTargetMonthOptions.includes(vsTargetMonth)) {
+    setVsTargetMonth(vsTargetMonthOptions[vsTargetMonthOptions.length - 1]);
+  }
+}, [vsTargetMonthOptions, vsTargetMonth]);
 
   const series = useMemo(() => buildTimeSeries(filtered, period), [filtered, period]);
 
@@ -5133,14 +5250,17 @@ function Dashboard() {
           )
         : null,
       tab === "vsTarget"
-        ? React.createElement(VsTargetTab, {
-            filtered,
-            rawData,
-            targetRows: targetData,
-            isPhone,
-            isTablet
-          })
-        : null
+  ? React.createElement(VsTargetTab, {
+      filtered,
+      rawData,
+      targetRows: targetData,
+      isPhone,
+      isTablet,
+      selectedMonth: vsTargetMonth,
+      onMonthChange: setVsTargetMonth,
+      monthOptions: vsTargetMonthOptions
+    })
+  : null
     ),
     React.createElement(ChatOverlay, {
       open: chatOpen,
