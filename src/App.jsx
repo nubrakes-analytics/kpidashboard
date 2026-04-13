@@ -4150,6 +4150,7 @@ function Dashboard() {
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [targetData, setTargetData] = useState(TARGET_DATA);
   const [vsTargetMonth, setVsTargetMonth] = useState("");
+  const [overviewMonth, setOverviewMonth] = useState("");
 
   useEffect(() => {
     if (SHARE_INCOMPATIBLE.has(trendKey) && trendView === "share") {
@@ -4212,8 +4213,26 @@ useEffect(() => {
   }
 }, [vsTargetMonthOptions, vsTargetMonth]);
 
+  const overviewMonthOptions = useMemo(() => {
+  const source = filtered.length ? filtered : rawData;
+  return [...new Set(source.map(r => (r.Month || "").slice(0, 7)).filter(Boolean))].sort();
+}, [filtered, rawData]);
+
+useEffect(() => {
+  if (!overviewMonthOptions.length) return;
+  if (!overviewMonth || !overviewMonthOptions.includes(overviewMonth)) {
+    setOverviewMonth(overviewMonthOptions[overviewMonthOptions.length - 1]);
+  }
+}, [overviewMonthOptions, overviewMonth]);
+
   const series = useMemo(() => buildTimeSeries(filtered, period), [filtered, period]);
 
+const overviewScopedRows = useMemo(() => {
+  const source = filtered.length ? filtered : rawData;
+  const monthKey = overviewMonth || getLatestMonthKey(source);
+  return source.filter(r => (r.Month || "").slice(0, 7) === monthKey);
+}, [filtered, rawData, overviewMonth]);
+  
   const shareRows =
     market === "All Markets" && chanCat === "All Channels" ? rawData : filtered;
 
@@ -4242,22 +4261,52 @@ useEffect(() => {
   );
 
   const curr = useMemo(() => {
-    if (!series.length) return {};
-    return aggregate(getRowsForLabel(series[series.length - 1].label));
-  }, [series, getRowsForLabel]);
+  if (period === "month") {
+    return aggregate(overviewScopedRows);
+  }
 
-  const prev = useMemo(() => {
-    if (series.length < 2) return {};
-    return aggregate(getRowsForLabel(series[series.length - 2].label));
-  }, [series, getRowsForLabel]);
+  if (!series.length) return {};
+  return aggregate(getRowsForLabel(series[series.length - 1].label));
+}, [period, overviewScopedRows, series, getRowsForLabel]);
 
-  const pacingByMetric = useMemo(() => {
-    const result = {};
+const prev = useMemo(() => {
+  if (period === "month") {
+    const source = filtered.length ? filtered : rawData;
+    const monthKeys = [...new Set(source.map(r => (r.Month || "").slice(0, 7)).filter(Boolean))].sort();
+    const idx = monthKeys.indexOf(overviewMonth);
+    const prevMonthKey = idx > 0 ? monthKeys[idx - 1] : null;
+
+    if (!prevMonthKey) return {};
+
+    return aggregate(source.filter(r => (r.Month || "").slice(0, 7) === prevMonthKey));
+  }
+
+  if (series.length < 2) return {};
+  return aggregate(getRowsForLabel(series[series.length - 2].label));
+}, [period, filtered, rawData, overviewMonth, series, getRowsForLabel]);
+
+ const pacingByMetric = useMemo(() => {
+  const result = {};
+
+  if (period !== "month") {
     METRICS.forEach(m => {
       result[m.key] = calcHistoricalPacing(period, filtered, m.key);
     });
     return result;
-  }, [period, filtered]);
+  }
+
+  const source = filtered.length ? filtered : rawData;
+  const latestMonthKey = getLatestMonthKey(source);
+  const isLatestSelectedMonth = overviewMonth === latestMonthKey;
+
+  METRICS.forEach(m => {
+    result[m.key] = isLatestSelectedMonth
+      ? calcHistoricalPacing(period, filtered, m.key)
+      : null;
+  });
+
+  return result;
+}, [period, filtered, rawData, overviewMonth]);
 
   const defaultPacing = pacingByMetric.revenue || null;
   const pct = (c, p) => (p ? ((c - p) / p) * 100 : 0);
@@ -4486,15 +4535,20 @@ useEffect(() => {
             chanCat +
             " · " +
             (tab === "overview"
-              ? overviewLabel
-              : tab === "vsTarget"
-              ? getLatestMonthKey(filtered || rawData)
-                ? new Date(getLatestMonthKey(filtered || rawData) + "-01T12:00:00").toLocaleDateString(
-                    "en-US",
-                    { month: "long", year: "numeric" }
-                  )
-                : "Current Month"
-              : periodLabel)
+  ? period === "month" && overviewMonth
+    ? new Date(overviewMonth + "-01T12:00:00").toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric"
+      })
+    : overviewLabel
+  : tab === "vsTarget"
+  ? vsTargetMonth
+    ? new Date(vsTargetMonth + "-01T12:00:00").toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric"
+      })
+    : "Current Month"
+  : periodLabel)
         ),
         React.createElement(
           "div",
@@ -4624,6 +4678,64 @@ useEffect(() => {
         ? React.createElement(
             "div",
             null,
+          period === "month"
+  ? React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: isPhone ? "stretch" : "center",
+          flexDirection: isPhone ? "column" : "row",
+          gap: 10,
+          marginBottom: 12
+        }
+      },
+      React.createElement(
+        "div",
+        {
+          style: {
+            fontSize: 12,
+            color: "#6b7280"
+          }
+        },
+        "Selected month: " +
+          (overviewMonth
+            ? new Date(overviewMonth + "-01T12:00:00").toLocaleDateString("en-US", {
+                month: "long",
+                year: "numeric"
+              })
+            : "Current Month")
+      ),
+      React.createElement(
+        "select",
+        {
+          value: overviewMonth,
+          onChange: e => setOverviewMonth(e.target.value),
+          style: {
+            padding: "9px 12px",
+            borderRadius: 8,
+            border: "1.5px solid #e5e7eb",
+            fontSize: 13,
+            color: "#374151",
+            background: "#fff",
+            cursor: "pointer",
+            minWidth: isPhone ? "100%" : 180
+          }
+        },
+        ...overviewMonthOptions.map(m =>
+          React.createElement(
+            "option",
+            { key: m, value: m },
+            new Date(m + "-01T12:00:00").toLocaleDateString("en-US", {
+              month: "long",
+              year: "numeric"
+            })
+          )
+        )
+      )
+    )
+  : null,
             pacingBanner,
             React.createElement(
               "div",
