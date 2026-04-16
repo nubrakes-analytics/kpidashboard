@@ -4214,9 +4214,8 @@ useEffect(() => {
 }, [vsTargetMonthOptions, vsTargetMonth]);
 
   const overviewMonthOptions = useMemo(() => {
-  const source = filtered.length ? filtered : rawData;
-  return [...new Set(source.map(r => (r.Month || "").slice(0, 7)).filter(Boolean))].sort();
-}, [filtered, rawData]);
+  return [...new Set(filtered.map(r => (r.Month || "").slice(0, 7)).filter(Boolean))].sort();
+}, [filtered]);
 
 useEffect(() => {
   if (!overviewMonthOptions.length) return;
@@ -4228,9 +4227,8 @@ useEffect(() => {
   const series = useMemo(() => buildTimeSeries(filtered, period), [filtered, period]);
 
 const overviewScopedRows = useMemo(() => {
-  const source = filtered.length ? filtered : rawData;
-  const monthKey = overviewMonth || getLatestMonthKey(source);
-  return source.filter(r => (r.Month || "").slice(0, 7) === monthKey);
+  const monthKey = overviewMonth || getLatestMonthKey(rawData);
+  return filtered.filter(r => (r.Month || "").slice(0, 7) === monthKey);
 }, [filtered, rawData, overviewMonth]);
   
   const shareRows =
@@ -4271,19 +4269,18 @@ const overviewScopedRows = useMemo(() => {
 
 const prev = useMemo(() => {
   if (period === "month") {
-    const source = filtered.length ? filtered : rawData;
-    const monthKeys = [...new Set(source.map(r => (r.Month || "").slice(0, 7)).filter(Boolean))].sort();
+    const monthKeys = [...new Set(filtered.map(r => (r.Month || "").slice(0, 7)).filter(Boolean))].sort();
     const idx = monthKeys.indexOf(overviewMonth);
     const prevMonthKey = idx > 0 ? monthKeys[idx - 1] : null;
 
     if (!prevMonthKey) return {};
 
-    return aggregate(source.filter(r => (r.Month || "").slice(0, 7) === prevMonthKey));
+    return aggregate(filtered.filter(r => (r.Month || "").slice(0, 7) === prevMonthKey));
   }
 
   if (series.length < 2) return {};
   return aggregate(getRowsForLabel(series[series.length - 2].label));
-}, [period, filtered, rawData, overviewMonth, series, getRowsForLabel]);
+}, [period, filtered, overviewMonth, series, getRowsForLabel]);
 
  const pacingByMetric = useMemo(() => {
   const result = {};
@@ -4295,18 +4292,18 @@ const prev = useMemo(() => {
     return result;
   }
 
-  const source = filtered.length ? filtered : rawData;
-  const latestMonthKey = getLatestMonthKey(source);
+  const latestMonthKey = getLatestMonthKey(filtered);
   const isLatestSelectedMonth = overviewMonth === latestMonthKey;
 
   METRICS.forEach(m => {
-    result[m.key] = isLatestSelectedMonth
-      ? calcHistoricalPacing(period, filtered, m.key)
-      : null;
+    result[m.key] =
+      filtered.length && isLatestSelectedMonth
+        ? calcHistoricalPacing(period, filtered, m.key)
+        : null;
   });
 
   return result;
-}, [period, filtered, rawData, overviewMonth]);
+}, [period, filtered, overviewMonth]);
 
   const defaultPacing = pacingByMetric.revenue || null;
   const pct = (c, p) => (p ? ((c - p) / p) * 100 : 0);
