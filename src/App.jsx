@@ -1545,6 +1545,8 @@ function MultiLineMetricChart({
 
   if (!allGroups.length) return null;
 
+  const canShowTotal = ADDITIVE_METRICS.has(metricKey);
+
   const activeGroups = selectedGroups.length
     ? allGroups.filter(g => selectedGroups.includes(g))
     : allGroups.slice(0, 5);
@@ -1565,9 +1567,11 @@ function MultiLineMetricChart({
       point[item.group] = match ? Number(match[metricKey]) || 0 : 0;
     });
 
-    point.Total = activeGroups.reduce((sum, group) => {
-      return sum + (Number(point[group]) || 0);
-    }, 0);
+    point.Total = canShowTotal
+      ? activeGroups.reduce((sum, group) => {
+          return sum + (Number(point[group]) || 0);
+        }, 0)
+      : null;
 
     return point;
   });
@@ -1578,10 +1582,10 @@ function MultiLineMetricChart({
 
   if (!visibleGroups.length) return null;
 
-  const vals = data.flatMap(d => [
-    ...visibleGroups.map(g => Number(d[g]) || 0),
-    Number(d.Total) || 0
-  ]);
+  const vals = data.flatMap(d => {
+    const groupVals = visibleGroups.map(g => Number(d[g]) || 0);
+    return canShowTotal ? [...groupVals, Number(d.Total) || 0] : groupVals;
+  });
 
   const maxVal = Math.max(...vals, 1);
 
@@ -1642,7 +1646,6 @@ function MultiLineMetricChart({
       const current = Array.isArray(prev) ? prev : [];
 
       if (current.includes(group)) {
-        // Keep at least one market visible
         if (current.length <= 1) return current;
         return current.filter(g => g !== group);
       }
@@ -1666,6 +1669,9 @@ function MultiLineMetricChart({
   let tooltipLeft = tooltipX - tooltipWidth / 2;
   if (tooltipLeft < 8) tooltipLeft = 8;
   if (tooltipLeft + tooltipWidth > W - 8) tooltipLeft = W - tooltipWidth - 8;
+
+  const tooltipHeight =
+    34 + visibleGroups.length * 16 + (canShowTotal ? 0 : 0);
 
   return React.createElement(
     "div",
@@ -1704,7 +1710,9 @@ function MultiLineMetricChart({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 6,
-                border: "1px solid " + (selected ? getSeriesColor(group, dimension) : "#e5e7eb"),
+                border:
+                  "1px solid " +
+                  (selected ? getSeriesColor(group, dimension) : "#e5e7eb"),
                 background: selected ? "#fff" : "#f8fafc",
                 color: selected ? "#111827" : "#9ca3af",
                 borderRadius: 999,
@@ -1719,7 +1727,9 @@ function MultiLineMetricChart({
                 width: 7,
                 height: 7,
                 borderRadius: "50%",
-                background: selected ? getSeriesColor(group, dimension) : "#cbd5e1",
+                background: selected
+                  ? getSeriesColor(group, dimension)
+                  : "#cbd5e1",
                 display: "inline-block"
               }
             }),
@@ -1810,24 +1820,27 @@ function MultiLineMetricChart({
         );
       }),
 
-      // Total line
-      React.createElement(
-        "g",
-        null,
-        React.createElement("polyline", {
-          points: data
-            .map((d, i) => `${xP(i).toFixed(1)},${yP(d.Total || 0).toFixed(1)}`)
-            .join(" "),
-          fill: "none",
-          stroke: "#111827",
-          strokeWidth: "2.5",
-          strokeLinejoin: "round",
-          strokeLinecap: "round",
-          strokeDasharray: "6,4"
-        })
-      ),
+      canShowTotal
+        ? React.createElement(
+            "g",
+            null,
+            React.createElement("polyline", {
+              points: data
+                .map(
+                  (d, i) =>
+                    `${xP(i).toFixed(1)},${yP(d.Total || 0).toFixed(1)}`
+                )
+                .join(" "),
+              fill: "none",
+              stroke: "#111827",
+              strokeWidth: "2.5",
+              strokeLinejoin: "round",
+              strokeLinecap: "round",
+              strokeDasharray: "6,4"
+            })
+          )
+        : null,
 
-      // Market lines
       visibleGroups.map(group => {
         const color = getSeriesColor(group, dimension);
 
@@ -1860,20 +1873,20 @@ function MultiLineMetricChart({
         );
       }),
 
-      // Total points
-      data.map((d, i) =>
-        React.createElement("circle", {
-          key: "total_" + i,
-          cx: xP(i),
-          cy: yP(d.Total || 0),
-          r: hoveredIndex === i ? 5 : 3.5,
-          fill: "#111827",
-          stroke: "#fff",
-          strokeWidth: "1.5"
-        })
-      ),
+      canShowTotal
+        ? data.map((d, i) =>
+            React.createElement("circle", {
+              key: "total_" + i,
+              cx: xP(i),
+              cy: yP(d.Total || 0),
+              r: hoveredIndex === i ? 5 : 3.5,
+              fill: "#111827",
+              stroke: "#fff",
+              strokeWidth: "1.5"
+            })
+          )
+        : null,
 
-      // Hover capture zones
       data.map((d, i) =>
         React.createElement("rect", {
           key: "hover_" + i,
@@ -1905,7 +1918,7 @@ function MultiLineMetricChart({
               x: tooltipLeft,
               y: 8,
               width: tooltipWidth,
-              height: 34 + visibleGroups.length * 16,
+              height: tooltipHeight,
               rx: 8,
               fill: "#111827",
               opacity: 0.96
@@ -1921,18 +1934,20 @@ function MultiLineMetricChart({
               },
               fmtLabel(hoveredPoint.label, period)
             ),
-            React.createElement(
-              "text",
-              {
-                x: tooltipLeft + tooltipWidth - 10,
-                y: 27,
-                textAnchor: "end",
-                fontSize: "10",
-                fill: "#fff",
-                fontWeight: "700"
-              },
-              "Total " + fmtTooltipValue(hoveredPoint.Total || 0)
-            ),
+            canShowTotal
+              ? React.createElement(
+                  "text",
+                  {
+                    x: tooltipLeft + tooltipWidth - 10,
+                    y: 27,
+                    textAnchor: "end",
+                    fontSize: "10",
+                    fill: "#fff",
+                    fontWeight: "700"
+                  },
+                  "Total " + fmtTooltipValue(hoveredPoint.Total || 0)
+                )
+              : null,
             visibleGroups.map((group, idx) =>
               React.createElement(
                 "g",
@@ -1998,37 +2013,39 @@ function MultiLineMetricChart({
           marginTop: 12
         }
       },
-      React.createElement(
-        "span",
-        {
-          style: {
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
-            fontSize: 12
-          }
-        },
-        React.createElement("span", {
-          style: {
-            width: 24,
-            height: 3,
-            borderRadius: 2,
-            background: "#111827",
-            display: "inline-block",
-            borderTop: "1px dashed #111827"
-          }
-        }),
-        React.createElement(
-          "span",
-          {
-            style: {
-              color: "#111827",
-              fontWeight: 700
-            }
-          },
-          "Total"
-        )
-      ),
+      canShowTotal
+        ? React.createElement(
+            "span",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 12
+              }
+            },
+            React.createElement("span", {
+              style: {
+                width: 24,
+                height: 3,
+                borderRadius: 2,
+                background: "#111827",
+                display: "inline-block",
+                borderTop: "1px dashed #111827"
+              }
+            }),
+            React.createElement(
+              "span",
+              {
+                style: {
+                  color: "#111827",
+                  fontWeight: 700
+                }
+              },
+              "Total"
+            )
+          )
+        : null,
       visibleGroups.map(group =>
         React.createElement(
           "span",
