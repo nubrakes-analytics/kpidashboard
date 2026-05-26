@@ -1525,18 +1525,35 @@ function MultiLineShareChart({ data, groups, period, dimension = "channel" }) {
   );
 }
 
-function MultiLineMetricChart({ seriesByGroup, metricKey, metric, period, dimension = "market" }) {
+function MultiLineMetricChart({
+  seriesByGroup,
+  metricKey,
+  metric,
+  period,
+  dimension = "market",
+  selectedGroups = [],
+  onSelectedGroupsChange
+}) {
+  const [hoveredIndex, setHoveredIndex] = React.useState(null);
+
   if (!Array.isArray(seriesByGroup) || !seriesByGroup.length) return null;
 
-  const groups = seriesByGroup
+  const allGroups = seriesByGroup
     .filter(item => (item.points || []).some(p => Number(p[metricKey]) > 0))
-    .map(item => item.group);
+    .map(item => item.group)
+    .sort();
 
-  if (!groups.length) return null;
+  if (!allGroups.length) return null;
+
+  const activeGroups = selectedGroups.length
+    ? allGroups.filter(g => selectedGroups.includes(g))
+    : allGroups.slice(0, 5);
 
   const allLabels = [
     ...new Set(
-      seriesByGroup.flatMap(item => (item.points || []).map(p => p.label).filter(Boolean))
+      seriesByGroup.flatMap(item =>
+        (item.points || []).map(p => p.label).filter(Boolean)
+      )
     )
   ].sort();
 
@@ -1548,19 +1565,37 @@ function MultiLineMetricChart({ seriesByGroup, metricKey, metric, period, dimens
       point[item.group] = match ? Number(match[metricKey]) || 0 : 0;
     });
 
+    point.Total = activeGroups.reduce((sum, group) => {
+      return sum + (Number(point[group]) || 0);
+    }, 0);
+
     return point;
   });
 
-  const activeGroups = groups.filter(g => data.some(d => Number(d[g]) > 0));
-  const vals = data.flatMap(d => activeGroups.map(g => Number(d[g]) || 0));
+  const visibleGroups = activeGroups.filter(g =>
+    data.some(d => Number(d[g]) > 0)
+  );
+
+  if (!visibleGroups.length) return null;
+
+  const vals = data.flatMap(d => [
+    ...visibleGroups.map(g => Number(d[g]) || 0),
+    Number(d.Total) || 0
+  ]);
+
   const maxVal = Math.max(...vals, 1);
-  const minVal = metricKey === "aov" || metricKey.includes("Rate") ? Math.min(...vals.filter(v => v > 0), 0) : 0;
+
+  const positiveVals = vals.filter(v => v > 0);
+  const minVal =
+    metricKey === "aov" || metricKey.includes("Rate")
+      ? Math.min(...positiveVals, 0)
+      : 0;
 
   const W = 680;
-  const H = 260;
+  const H = 280;
   const pL = 64;
   const pB = 42;
-  const pT = 18;
+  const pT = 20;
   const pR = 18;
   const cW = W - pL - pR;
   const cH = H - pB - pT;
@@ -1571,29 +1606,181 @@ function MultiLineMetricChart({ seriesByGroup, metricKey, metric, period, dimens
   const xP = i => pL + (n > 1 ? i / (n - 1) : 0.5) * cW;
   const yP = v => pT + cH - ((Math.max(v, minVal) - minVal) / yRange) * cH;
 
-  const fmtY = v => {
+  const fmtValue = v => {
     if (metricKey === "revenue" || metricKey === "aov") {
       if (Math.abs(v) >= 1000000) return "$" + (v / 1000000).toFixed(1) + "M";
       if (Math.abs(v) >= 1000) return "$" + (v / 1000).toFixed(0) + "k";
-      return "$" + Math.round(v);
+      return "$" + Math.round(v).toLocaleString();
     }
 
     if (metricKey.includes("Rate")) {
-      return (v * 100).toFixed(0) + "%";
+      return (v * 100).toFixed(1) + "%";
     }
 
     if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + "k";
-    return Math.round(v).toString();
+    return Math.round(v).toLocaleString();
+  };
+
+  const fmtTooltipValue = v => {
+    if (metricKey === "revenue" || metricKey === "aov") {
+      return "$" + Math.round(v).toLocaleString();
+    }
+
+    if (metricKey.includes("Rate")) {
+      return (v * 100).toFixed(1) + "%";
+    }
+
+    return Math.round(v).toLocaleString();
   };
 
   const yTicks = Array.from({ length: 5 }, (_, i) => minVal + (yRange * i) / 4);
 
+  const toggleGroup = group => {
+    if (!onSelectedGroupsChange) return;
+
+    onSelectedGroupsChange(prev => {
+      const current = Array.isArray(prev) ? prev : [];
+
+      if (current.includes(group)) {
+        // Keep at least one market visible
+        if (current.length <= 1) return current;
+        return current.filter(g => g !== group);
+      }
+
+      return [...current, group];
+    });
+  };
+
+  const selectAll = () => {
+    if (onSelectedGroupsChange) onSelectedGroupsChange(allGroups);
+  };
+
+  const clearToTopFive = () => {
+    if (onSelectedGroupsChange) onSelectedGroupsChange(allGroups.slice(0, 5));
+  };
+
+  const hoveredPoint = hoveredIndex !== null ? data[hoveredIndex] : null;
+  const tooltipX = hoveredIndex !== null ? xP(hoveredIndex) : 0;
+
+  const tooltipWidth = 190;
+  let tooltipLeft = tooltipX - tooltipWidth / 2;
+  if (tooltipLeft < 8) tooltipLeft = 8;
+  if (tooltipLeft + tooltipWidth > W - 8) tooltipLeft = W - tooltipWidth - 8;
+
   return React.createElement(
     "div",
     null,
+
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 10,
+          marginBottom: 12,
+          flexWrap: "wrap"
+        }
+      },
+      React.createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap"
+          }
+        },
+        allGroups.map(group => {
+          const selected = activeGroups.includes(group);
+
+          return React.createElement(
+            "button",
+            {
+              key: group,
+              onClick: () => toggleGroup(group),
+              style: {
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                border: "1px solid " + (selected ? getSeriesColor(group, dimension) : "#e5e7eb"),
+                background: selected ? "#fff" : "#f8fafc",
+                color: selected ? "#111827" : "#9ca3af",
+                borderRadius: 999,
+                padding: "5px 9px",
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: "pointer"
+              }
+            },
+            React.createElement("span", {
+              style: {
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: selected ? getSeriesColor(group, dimension) : "#cbd5e1",
+                display: "inline-block"
+              }
+            }),
+            group
+          );
+        })
+      ),
+
+      React.createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            gap: 6,
+            flexShrink: 0
+          }
+        },
+        React.createElement(
+          "button",
+          {
+            onClick: selectAll,
+            style: {
+              border: "1px solid #e5e7eb",
+              background: "#fff",
+              borderRadius: 8,
+              padding: "5px 9px",
+              fontSize: 11,
+              fontWeight: 600,
+              color: "#374151",
+              cursor: "pointer"
+            }
+          },
+          "All"
+        ),
+        React.createElement(
+          "button",
+          {
+            onClick: clearToTopFive,
+            style: {
+              border: "1px solid #e5e7eb",
+              background: "#fff",
+              borderRadius: 8,
+              padding: "5px 9px",
+              fontSize: 11,
+              fontWeight: 600,
+              color: "#374151",
+              cursor: "pointer"
+            }
+          },
+          "Top 5"
+        )
+      )
+    ),
+
     React.createElement(
       "svg",
-      { viewBox: `0 0 ${W} ${H}`, style: { width: "100%", height: "auto" } },
+      {
+        viewBox: `0 0 ${W} ${H}`,
+        style: { width: "100%", height: "auto", overflow: "visible" },
+        onMouseLeave: () => setHoveredIndex(null)
+      },
 
       yTicks.map((tick, idx) => {
         const y = yP(tick);
@@ -1618,13 +1805,32 @@ function MultiLineMetricChart({ seriesByGroup, metricKey, metric, period, dimens
               fontSize: "10",
               fill: "#9ca3af"
             },
-            fmtY(tick)
+            fmtValue(tick)
           )
         );
       }),
 
-      activeGroups.map(group => {
+      // Total line
+      React.createElement(
+        "g",
+        null,
+        React.createElement("polyline", {
+          points: data
+            .map((d, i) => `${xP(i).toFixed(1)},${yP(d.Total || 0).toFixed(1)}`)
+            .join(" "),
+          fill: "none",
+          stroke: "#111827",
+          strokeWidth: "2.5",
+          strokeLinejoin: "round",
+          strokeLinecap: "round",
+          strokeDasharray: "6,4"
+        })
+      ),
+
+      // Market lines
+      visibleGroups.map(group => {
         const color = getSeriesColor(group, dimension);
+
         const pts = data
           .map((d, i) => `${xP(i).toFixed(1)},${yP(d[group] || 0).toFixed(1)}`)
           .join(" ");
@@ -1645,7 +1851,7 @@ function MultiLineMetricChart({ seriesByGroup, metricKey, metric, period, dimens
               key: group + "_" + i,
               cx: xP(i),
               cy: yP(d[group] || 0),
-              r: 2.5,
+              r: hoveredIndex === i ? 3.8 : 2.5,
               fill: color,
               stroke: "#fff",
               strokeWidth: "1"
@@ -1653,6 +1859,116 @@ function MultiLineMetricChart({ seriesByGroup, metricKey, metric, period, dimens
           )
         );
       }),
+
+      // Total points
+      data.map((d, i) =>
+        React.createElement("circle", {
+          key: "total_" + i,
+          cx: xP(i),
+          cy: yP(d.Total || 0),
+          r: hoveredIndex === i ? 5 : 3.5,
+          fill: "#111827",
+          stroke: "#fff",
+          strokeWidth: "1.5"
+        })
+      ),
+
+      // Hover capture zones
+      data.map((d, i) =>
+        React.createElement("rect", {
+          key: "hover_" + i,
+          x: i === 0 ? pL - 10 : xP(i) - cW / Math.max(n - 1, 1) / 2,
+          y: pT,
+          width: n === 1 ? cW : cW / Math.max(n - 1, 1),
+          height: cH,
+          fill: "transparent",
+          style: { cursor: "pointer" },
+          onMouseEnter: () => setHoveredIndex(i),
+          onMouseMove: () => setHoveredIndex(i)
+        })
+      ),
+
+      hoveredPoint
+        ? React.createElement(
+            "g",
+            null,
+            React.createElement("line", {
+              x1: tooltipX,
+              x2: tooltipX,
+              y1: pT,
+              y2: pT + cH,
+              stroke: "#cbd5e1",
+              strokeWidth: "1",
+              strokeDasharray: "4,4"
+            }),
+            React.createElement("rect", {
+              x: tooltipLeft,
+              y: 8,
+              width: tooltipWidth,
+              height: 34 + visibleGroups.length * 16,
+              rx: 8,
+              fill: "#111827",
+              opacity: 0.96
+            }),
+            React.createElement(
+              "text",
+              {
+                x: tooltipLeft + 10,
+                y: 27,
+                fontSize: "10",
+                fill: "#fff",
+                fontWeight: "700"
+              },
+              fmtLabel(hoveredPoint.label, period)
+            ),
+            React.createElement(
+              "text",
+              {
+                x: tooltipLeft + tooltipWidth - 10,
+                y: 27,
+                textAnchor: "end",
+                fontSize: "10",
+                fill: "#fff",
+                fontWeight: "700"
+              },
+              "Total " + fmtTooltipValue(hoveredPoint.Total || 0)
+            ),
+            visibleGroups.map((group, idx) =>
+              React.createElement(
+                "g",
+                { key: group },
+                React.createElement("circle", {
+                  cx: tooltipLeft + 12,
+                  cy: 47 + idx * 16,
+                  r: 3,
+                  fill: getSeriesColor(group, dimension)
+                }),
+                React.createElement(
+                  "text",
+                  {
+                    x: tooltipLeft + 22,
+                    y: 50 + idx * 16,
+                    fontSize: "9.5",
+                    fill: "#e5e7eb"
+                  },
+                  group
+                ),
+                React.createElement(
+                  "text",
+                  {
+                    x: tooltipLeft + tooltipWidth - 10,
+                    y: 50 + idx * 16,
+                    textAnchor: "end",
+                    fontSize: "9.5",
+                    fill: "#e5e7eb",
+                    fontWeight: "600"
+                  },
+                  fmtTooltipValue(hoveredPoint[group] || 0)
+                )
+              )
+            )
+          )
+        : null,
 
       data.map((d, i) =>
         i % step === 0
@@ -1682,7 +1998,38 @@ function MultiLineMetricChart({ seriesByGroup, metricKey, metric, period, dimens
           marginTop: 12
         }
       },
-      activeGroups.map(group =>
+      React.createElement(
+        "span",
+        {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            fontSize: 12
+          }
+        },
+        React.createElement("span", {
+          style: {
+            width: 24,
+            height: 3,
+            borderRadius: 2,
+            background: "#111827",
+            display: "inline-block",
+            borderTop: "1px dashed #111827"
+          }
+        }),
+        React.createElement(
+          "span",
+          {
+            style: {
+              color: "#111827",
+              fontWeight: 700
+            }
+          },
+          "Total"
+        )
+      ),
+      visibleGroups.map(group =>
         React.createElement(
           "span",
           {
@@ -4340,6 +4687,7 @@ function Dashboard() {
   const [chartType, setChartType] = useState("line");
   const [trendView, setTrendView] = useState("absolute");
   const [trendDimension, setTrendDimension] = useState("overall");
+  const [selectedTrendMarkets, setSelectedTrendMarkets] = useState([]);
   const [shareDimension, setShareDimension] = useState("channel");
   const [chatOpen, setChatOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
@@ -4396,6 +4744,39 @@ function Dashboard() {
     [rawData, market, chanCat]
   );
 
+  const availableTrendMarkets = useMemo(() => {
+
+  return marketTrendSeries
+
+    .filter(item => (item.points || []).some(p => Number(p[trendKey]) > 0))
+
+    .map(item => item.group)
+
+    .sort();
+
+}, [marketTrendSeries, trendKey]);
+
+useEffect(() => {
+
+  if (!availableTrendMarkets.length) return;
+
+  setSelectedTrendMarkets(prev => {
+
+    const valid = prev.filter(m => availableTrendMarkets.includes(m));
+
+    // Default: show top 5 markets so the chart is not too crowded
+
+    if (!valid.length) {
+
+      return availableTrendMarkets.slice(0, 5);
+
+    }
+
+    return valid;
+
+  });
+
+}, [availableTrendMarkets]);
   const marketTrendSeries = useMemo(
   () => buildSeriesBreakdown(filtered, period, "market"),
   [filtered, period]
@@ -5332,18 +5713,14 @@ const prev = useMemo(() => {
                     trendDimension === "market"
 
   ? React.createElement(MultiLineMetricChart, {
-
-      seriesByGroup: marketTrendSeries,
-
-      metricKey: trendKey,
-
-      metric: selMetric,
-
-      period,
-
-      dimension: "market"
-
-    })
+  seriesByGroup: marketTrendSeries,
+  metricKey: trendKey,
+  metric: selMetric,
+  period,
+  dimension: "market",
+  selectedGroups: selectedTrendMarkets,
+  onSelectedGroupsChange: setSelectedTrendMarkets
+})
 
   : React.createElement(TrendChart, {
 
