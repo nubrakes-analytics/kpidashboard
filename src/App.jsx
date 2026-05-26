@@ -1525,6 +1525,200 @@ function MultiLineShareChart({ data, groups, period, dimension = "channel" }) {
   );
 }
 
+function MultiLineMetricChart({ seriesByGroup, metricKey, metric, period, dimension = "market" }) {
+  if (!Array.isArray(seriesByGroup) || !seriesByGroup.length) return null;
+
+  const groups = seriesByGroup
+    .filter(item => (item.points || []).some(p => Number(p[metricKey]) > 0))
+    .map(item => item.group);
+
+  if (!groups.length) return null;
+
+  const allLabels = [
+    ...new Set(
+      seriesByGroup.flatMap(item => (item.points || []).map(p => p.label).filter(Boolean))
+    )
+  ].sort();
+
+  const data = allLabels.map(label => {
+    const point = { label };
+
+    seriesByGroup.forEach(item => {
+      const match = (item.points || []).find(p => p.label === label);
+      point[item.group] = match ? Number(match[metricKey]) || 0 : 0;
+    });
+
+    return point;
+  });
+
+  const activeGroups = groups.filter(g => data.some(d => Number(d[g]) > 0));
+  const vals = data.flatMap(d => activeGroups.map(g => Number(d[g]) || 0));
+  const maxVal = Math.max(...vals, 1);
+  const minVal = metricKey === "aov" || metricKey.includes("Rate") ? Math.min(...vals.filter(v => v > 0), 0) : 0;
+
+  const W = 680;
+  const H = 260;
+  const pL = 64;
+  const pB = 42;
+  const pT = 18;
+  const pR = 18;
+  const cW = W - pL - pR;
+  const cH = H - pB - pT;
+  const n = data.length;
+  const step = Math.ceil(n / 10);
+
+  const yRange = maxVal - minVal || 1;
+  const xP = i => pL + (n > 1 ? i / (n - 1) : 0.5) * cW;
+  const yP = v => pT + cH - ((Math.max(v, minVal) - minVal) / yRange) * cH;
+
+  const fmtY = v => {
+    if (metricKey === "revenue" || metricKey === "aov") {
+      if (Math.abs(v) >= 1000000) return "$" + (v / 1000000).toFixed(1) + "M";
+      if (Math.abs(v) >= 1000) return "$" + (v / 1000).toFixed(0) + "k";
+      return "$" + Math.round(v);
+    }
+
+    if (metricKey.includes("Rate")) {
+      return (v * 100).toFixed(0) + "%";
+    }
+
+    if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + "k";
+    return Math.round(v).toString();
+  };
+
+  const yTicks = Array.from({ length: 5 }, (_, i) => minVal + (yRange * i) / 4);
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      "svg",
+      { viewBox: `0 0 ${W} ${H}`, style: { width: "100%", height: "auto" } },
+
+      yTicks.map((tick, idx) => {
+        const y = yP(tick);
+
+        return React.createElement(
+          "g",
+          { key: idx },
+          React.createElement("line", {
+            x1: pL,
+            x2: W - pR,
+            y1: y,
+            y2: y,
+            stroke: "#e5e7eb",
+            strokeWidth: "1"
+          }),
+          React.createElement(
+            "text",
+            {
+              x: pL - 6,
+              y: y + 4,
+              textAnchor: "end",
+              fontSize: "10",
+              fill: "#9ca3af"
+            },
+            fmtY(tick)
+          )
+        );
+      }),
+
+      activeGroups.map(group => {
+        const color = getSeriesColor(group, dimension);
+        const pts = data
+          .map((d, i) => `${xP(i).toFixed(1)},${yP(d[group] || 0).toFixed(1)}`)
+          .join(" ");
+
+        return React.createElement(
+          "g",
+          { key: group },
+          React.createElement("polyline", {
+            points: pts,
+            fill: "none",
+            stroke: color,
+            strokeWidth: "2",
+            strokeLinejoin: "round",
+            strokeLinecap: "round"
+          }),
+          data.map((d, i) =>
+            React.createElement("circle", {
+              key: group + "_" + i,
+              cx: xP(i),
+              cy: yP(d[group] || 0),
+              r: 2.5,
+              fill: color,
+              stroke: "#fff",
+              strokeWidth: "1"
+            })
+          )
+        );
+      }),
+
+      data.map((d, i) =>
+        i % step === 0
+          ? React.createElement(
+              "text",
+              {
+                key: i,
+                x: xP(i),
+                y: H - 6,
+                textAnchor: "middle",
+                fontSize: "9",
+                fill: "#9ca3af"
+              },
+              fmtLabel(d.label, period)
+            )
+          : null
+      )
+    ),
+
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 10,
+          marginTop: 12
+        }
+      },
+      activeGroups.map(group =>
+        React.createElement(
+          "span",
+          {
+            key: group,
+            style: {
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: 12
+            }
+          },
+          React.createElement("span", {
+            style: {
+              width: 24,
+              height: 3,
+              borderRadius: 2,
+              background: getSeriesColor(group, dimension),
+              display: "inline-block"
+            }
+          }),
+          React.createElement(
+            "span",
+            {
+              style: {
+                color: "#374151",
+                fontWeight: 600
+              }
+            },
+            group
+          )
+        )
+      )
+    )
+  );
+}
+
 function TrendChart({ data, metricKey, metric, period, chartType, pacing }) {
   const [hoveredIndex, setHoveredIndex] = React.useState(null);
 
@@ -4145,6 +4339,7 @@ function Dashboard() {
   const [trendKey, setTrendKey] = useState("revenue");
   const [chartType, setChartType] = useState("line");
   const [trendView, setTrendView] = useState("absolute");
+  const [trendDimension, setTrendDimension] = useState("overall");
   const [shareDimension, setShareDimension] = useState("channel");
   const [chatOpen, setChatOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
@@ -4200,6 +4395,11 @@ function Dashboard() {
       ),
     [rawData, market, chanCat]
   );
+
+  const marketTrendSeries = useMemo(
+  () => buildSeriesBreakdown(filtered, period, "market"),
+  [filtered, period]
+);
 
   const vsTargetMonthOptions = useMemo(() => {
   const source = filtered.length ? filtered : rawData;
@@ -4945,133 +5145,156 @@ const prev = useMemo(() => {
               )
             ),
             React.createElement(
-              "div",
-              {
-                style: {
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  marginBottom: 16,
-                  flexWrap: "wrap"
-                }
-              },
-              React.createElement(
-                "div",
-                {
-                  style: {
-                    display: "flex",
-                    gap: 4,
-                    background: shareBlocked ? "#f8fafc" : "#f1f5f9",
-                    borderRadius: 8,
-                    padding: 3,
-                    opacity: shareBlocked ? 0.5 : 1
-                  }
-                },
-                [["absolute", "Absolute"], ["share", "% Share"]].map(([v, lbl]) =>
-                  React.createElement(
-                    "button",
-                    {
-                      key: v,
-                      onClick: () => {
-                        if (!shareBlocked || v === "absolute") setTrendView(v);
-                      },
-                      disabled: shareBlocked && v === "share",
-                      style: {
-                        padding: "5px 14px",
-                        borderRadius: 6,
-                        border: "none",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: shareBlocked && v === "share" ? "not-allowed" : "pointer",
-                        background:
-                          trendView === v && !(shareBlocked && v === "share")
-                            ? "#fff"
-                            : "transparent",
-                        color:
-                          trendView === v && !(shareBlocked && v === "share")
-                            ? "#111827"
-                            : "#9ca3af",
-                        boxShadow:
-                          trendView === v && !(shareBlocked && v === "share")
-                            ? "0 1px 3px rgba(0,0,0,0.1)"
-                            : "none",
-                        whiteSpace: "nowrap"
-                      }
-                    },
-                    lbl
-                  )
-                )
-              ),
-              trendView === "share" && !shareBlocked
-                ? React.createElement(
-                    "div",
-                    {
-                      style: {
-                        display: "flex",
-                        gap: 4,
-                        background: "#f1f5f9",
-                        borderRadius: 8,
-                        padding: 3
-                      }
-                    },
-                    [["channel", "By Channel"], ["market", "By Market"]].map(([v, lbl]) =>
-                      React.createElement(
-                        "button",
-                        {
-                          key: v,
-                          onClick: () => setShareDimension(v),
-                          style: {
-                            padding: "5px 14px",
-                            borderRadius: 6,
-                            border: "none",
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            background: shareDimension === v ? "#fff" : "transparent",
-                            color: shareDimension === v ? "#111827" : "#9ca3af",
-                            boxShadow:
-                              shareDimension === v
-                                ? "0 1px 3px rgba(0,0,0,0.1)"
-                                : "none",
-                            whiteSpace: "nowrap"
-                          }
-                        },
-                        lbl
-                      )
-                    )
-                  )
-                : null,
-              shareBlocked
-                ? React.createElement(
-                    "span",
-                    {
-                      style: {
-                        fontSize: 11,
-                        color: "#9ca3af",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4
-                      }
-                    },
-                    React.createElement(
-                      "svg",
-                      {
-                        width: 13,
-                        height: 13,
-                        viewBox: "0 0 24 24",
-                        fill: "none",
-                        stroke: "#9ca3af",
-                        strokeWidth: "2",
-                        strokeLinecap: "round"
-                      },
-                      React.createElement("circle", { cx: "12", cy: "12", r: "10" }),
-                      React.createElement("line", { x1: "12", y1: "8", x2: "12", y2: "12" }),
-                      React.createElement("line", { x1: "12", y1: "16", x2: "12.01", y2: "16" })
-                    ),
-                    "% share is not meaningful for rate and average metrics"
-                  )
-                : null
-            ),
+  "div",
+  {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 16,
+      flexWrap: "wrap"
+    }
+  },
+
+  React.createElement(
+    "div",
+    {
+      style: {
+        display: "flex",
+        gap: 4,
+        background: "#f1f5f9",
+        borderRadius: 8,
+        padding: 3
+      }
+    },
+    [["overall", "Overall"], ["market", "By Market"]].map(([v, lbl]) =>
+      React.createElement(
+        "button",
+        {
+          key: v,
+          onClick: () => setTrendDimension(v),
+          style: {
+            padding: "5px 14px",
+            borderRadius: 6,
+            border: "none",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+            background: trendDimension === v ? "#fff" : "transparent",
+            color: trendDimension === v ? "#111827" : "#9ca3af",
+            boxShadow: trendDimension === v ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+            whiteSpace: "nowrap"
+          }
+        },
+        lbl
+      )
+    )
+  ),
+
+  React.createElement(
+    "div",
+    {
+      style: {
+        display: "flex",
+        gap: 4,
+        background: shareBlocked ? "#f8fafc" : "#f1f5f9",
+        borderRadius: 8,
+        padding: 3,
+        opacity: shareBlocked ? 0.5 : 1
+      }
+    },
+    [["absolute", "Absolute"], ["share", "% Share"]].map(([v, lbl]) =>
+      React.createElement(
+        "button",
+        {
+          key: v,
+          onClick: () => {
+            if (!shareBlocked || v === "absolute") setTrendView(v);
+          },
+          disabled: shareBlocked && v === "share",
+          style: {
+            padding: "5px 14px",
+            borderRadius: 6,
+            border: "none",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: shareBlocked && v === "share" ? "not-allowed" : "pointer",
+            background:
+              trendView === v && !(shareBlocked && v === "share")
+                ? "#fff"
+                : "transparent",
+            color:
+              trendView === v && !(shareBlocked && v === "share")
+                ? "#111827"
+                : "#9ca3af",
+            boxShadow:
+              trendView === v && !(shareBlocked && v === "share")
+                ? "0 1px 3px rgba(0,0,0,0.1)"
+                : "none",
+            whiteSpace: "nowrap"
+          }
+        },
+        lbl
+      )
+    )
+  ),
+
+  trendView === "share" && !shareBlocked
+    ? React.createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            gap: 4,
+            background: "#f1f5f9",
+            borderRadius: 8,
+            padding: 3
+          }
+        },
+        [["channel", "By Channel"], ["market", "By Market"]].map(([v, lbl]) =>
+          React.createElement(
+            "button",
+            {
+              key: v,
+              onClick: () => setShareDimension(v),
+              style: {
+                padding: "5px 14px",
+                borderRadius: 6,
+                border: "none",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                background: shareDimension === v ? "#fff" : "transparent",
+                color: shareDimension === v ? "#111827" : "#9ca3af",
+                boxShadow:
+                  shareDimension === v
+                    ? "0 1px 3px rgba(0,0,0,0.1)"
+                    : "none",
+                whiteSpace: "nowrap"
+              }
+            },
+            lbl
+          )
+        )
+      )
+    : null,
+
+  shareBlocked
+    ? React.createElement(
+        "span",
+        {
+          style: {
+            fontSize: 11,
+            color: "#9ca3af",
+            display: "flex",
+            alignItems: "center",
+            gap: 4
+          }
+        },
+        "% share is not meaningful for rate and average metrics"
+      )
+    : null
+),
             trendView === "absolute"
               ? React.createElement(
                   "div",
@@ -5100,16 +5323,43 @@ const prev = useMemo(() => {
                           marginBottom: 14
                         }
                       },
-                      market + " · " + chanCat
+                     trendDimension === "market"
+
+  ? "By Market · " + chanCat
+
+  : market + " · " + chanCat
                     ),
-                    React.createElement(TrendChart, {
-                      data: series,
-                      metricKey: trendKey,
-                      metric: selMetric,
-                      period,
-                      chartType,
-                      pacing: selectedMetricPacing
-                    })
+                    trendDimension === "market"
+
+  ? React.createElement(MultiLineMetricChart, {
+
+      seriesByGroup: marketTrendSeries,
+
+      metricKey: trendKey,
+
+      metric: selMetric,
+
+      period,
+
+      dimension: "market"
+
+    })
+
+  : React.createElement(TrendChart, {
+
+      data: series,
+
+      metricKey: trendKey,
+
+      metric: selMetric,
+
+      period,
+
+      chartType,
+
+      pacing: selectedMetricPacing
+
+    })
                   ),
                   React.createElement(
                     "div",
