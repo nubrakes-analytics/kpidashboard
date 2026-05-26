@@ -1665,7 +1665,7 @@ function MultiLineMetricChart({
   const hoveredPoint = hoveredIndex !== null ? data[hoveredIndex] : null;
   const tooltipX = hoveredIndex !== null ? xP(hoveredIndex) : 0;
 
-  const tooltipWidth = 190;
+  const tooltipWidth = 230;
   let tooltipLeft = tooltipX - tooltipWidth / 2;
   if (tooltipLeft < 8) tooltipLeft = 8;
   if (tooltipLeft + tooltipWidth > W - 8) tooltipLeft = W - tooltipWidth - 8;
@@ -1902,88 +1902,100 @@ function MultiLineMetricChart({
       ),
 
       hoveredPoint
-        ? React.createElement(
+  ? React.createElement(
+      "g",
+      null,
+
+      React.createElement("line", {
+        x1: tooltipX,
+        x2: tooltipX,
+        y1: pT,
+        y2: pT + cH,
+        stroke: "#cbd5e1",
+        strokeWidth: "1",
+        strokeDasharray: "4,4"
+      }),
+
+      React.createElement("rect", {
+        x: tooltipLeft,
+        y: 8,
+        width: tooltipWidth,
+        height: 42 + visibleGroups.length * 18,
+        rx: 8,
+        fill: "#111827",
+        opacity: 0.96
+      }),
+
+      React.createElement(
+        "text",
+        {
+          x: tooltipLeft + 10,
+          y: 27,
+          fontSize: "10",
+          fill: "#fff",
+          fontWeight: "700"
+        },
+        fmtLabel(hoveredPoint.label, period)
+      ),
+
+      React.createElement(
+        "text",
+        {
+          x: tooltipLeft + tooltipWidth - 10,
+          y: 27,
+          textAnchor: "end",
+          fontSize: "10",
+          fill: "#fff",
+          fontWeight: "700"
+        },
+        "Total " + fmtTooltipValue(hoveredPoint.Total || 0)
+      ),
+
+      visibleGroups
+        .map(group => ({
+          group,
+          value: Number(hoveredPoint[group]) || 0
+        }))
+        .sort((a, b) => b.value - a.value)
+        .map((item, idx) =>
+          React.createElement(
             "g",
-            null,
-            React.createElement("line", {
-              x1: tooltipX,
-              x2: tooltipX,
-              y1: pT,
-              y2: pT + cH,
-              stroke: "#cbd5e1",
-              strokeWidth: "1",
-              strokeDasharray: "4,4"
+            { key: item.group },
+
+            React.createElement("circle", {
+              cx: tooltipLeft + 12,
+              cy: 49 + idx * 18,
+              r: 3,
+              fill: getSeriesColor(item.group, dimension)
             }),
-            React.createElement("rect", {
-              x: tooltipLeft,
-              y: 8,
-              width: tooltipWidth,
-              height: tooltipHeight,
-              rx: 8,
-              fill: "#111827",
-              opacity: 0.96
-            }),
+
             React.createElement(
               "text",
               {
-                x: tooltipLeft + 10,
-                y: 27,
-                fontSize: "10",
-                fill: "#fff",
+                x: tooltipLeft + 22,
+                y: 52 + idx * 18,
+                fontSize: "9.5",
+                fill: "#e5e7eb"
+              },
+              item.group
+            ),
+
+            React.createElement(
+              "text",
+              {
+                x: tooltipLeft + tooltipWidth - 10,
+                y: 52 + idx * 18,
+                textAnchor: "end",
+                fontSize: "9.5",
+                fill: "#e5e7eb",
                 fontWeight: "700"
               },
-              fmtLabel(hoveredPoint.label, period)
-            ),
-            canShowTotal
-              ? React.createElement(
-                  "text",
-                  {
-                    x: tooltipLeft + tooltipWidth - 10,
-                    y: 27,
-                    textAnchor: "end",
-                    fontSize: "10",
-                    fill: "#fff",
-                    fontWeight: "700"
-                  },
-                  "Total " + fmtTooltipValue(hoveredPoint.Total || 0)
-                )
-              : null,
-            visibleGroups.map((group, idx) =>
-              React.createElement(
-                "g",
-                { key: group },
-                React.createElement("circle", {
-                  cx: tooltipLeft + 12,
-                  cy: 47 + idx * 16,
-                  r: 3,
-                  fill: getSeriesColor(group, dimension)
-                }),
-                React.createElement(
-                  "text",
-                  {
-                    x: tooltipLeft + 22,
-                    y: 50 + idx * 16,
-                    fontSize: "9.5",
-                    fill: "#e5e7eb"
-                  },
-                  group
-                ),
-                React.createElement(
-                  "text",
-                  {
-                    x: tooltipLeft + tooltipWidth - 10,
-                    y: 50 + idx * 16,
-                    textAnchor: "end",
-                    fontSize: "9.5",
-                    fill: "#e5e7eb",
-                    fontWeight: "600"
-                  },
-                  fmtTooltipValue(hoveredPoint[group] || 0)
-                )
-              )
+              fmtTooltipValue(item.value)
             )
           )
-        : null,
+        )
+    )
+  : null
 
       data.map((d, i) =>
         i % step === 0
