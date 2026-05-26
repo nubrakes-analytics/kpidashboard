@@ -1546,8 +1546,8 @@ function MultiLineMetricChart({
   if (!allGroups.length) return null;
 
   const activeGroups = selectedGroups.length
-    ? allGroups.filter(g => selectedGroups.includes(g))
-    : allGroups.slice(0, 5);
+  ? allGroups.filter(g => selectedGroups.includes(g))
+  : allGroups;
 
   const allLabels = [
     ...new Set(
@@ -1650,9 +1650,6 @@ function MultiLineMetricChart({
     if (onSelectedGroupsChange) onSelectedGroupsChange(allGroups);
   };
 
-  const clearToTopFive = () => {
-    if (onSelectedGroupsChange) onSelectedGroupsChange(allGroups.slice(0, 5));
-  };
 
   const hoveredPoint = hoveredIndex !== null ? data[hoveredIndex] : null;
   const tooltipX = hoveredIndex !== null ? xP(hoveredIndex) : 0;
@@ -1728,49 +1725,32 @@ function MultiLineMetricChart({
       ),
 
       React.createElement(
-        "div",
-        {
-          style: {
-            display: "flex",
-            gap: 6,
-            flexShrink: 0
-          }
-        },
-        React.createElement(
-          "button",
-          {
-            onClick: selectAll,
-            style: {
-              border: "1px solid #e5e7eb",
-              background: "#fff",
-              borderRadius: 8,
-              padding: "5px 9px",
-              fontSize: 11,
-              fontWeight: 600,
-              color: "#374151",
-              cursor: "pointer"
-            }
-          },
-          "All"
-        ),
-        React.createElement(
-          "button",
-          {
-            onClick: clearToTopFive,
-            style: {
-              border: "1px solid #e5e7eb",
-              background: "#fff",
-              borderRadius: 8,
-              padding: "5px 9px",
-              fontSize: 11,
-              fontWeight: 600,
-              color: "#374151",
-              cursor: "pointer"
-            }
-          },
-          "Top 5"
-        )
-      )
+  "div",
+  {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexShrink: 0
+    }
+  },
+  React.createElement(
+    "button",
+    {
+      onClick: selectAll,
+      style: {
+        border: "1px solid #e5e7eb",
+        background: "#fff",
+        borderRadius: 8,
+        padding: "5px 9px",
+        fontSize: 11,
+        fontWeight: 600,
+        color: "#374151",
+        cursor: "pointer"
+      }
+    },
+    "All"
+  )
+)
     ),
 
     React.createElement(
@@ -4700,25 +4680,17 @@ function Dashboard() {
 }, [marketTrendSeries, trendKey]);
 
 useEffect(() => {
-
   if (!availableTrendMarkets.length) return;
 
   setSelectedTrendMarkets(prev => {
-
     const valid = prev.filter(m => availableTrendMarkets.includes(m));
 
-    // Default: show top 5 markets so the chart is not too crowded
-
     if (!valid.length) {
-
-      return availableTrendMarkets.slice(0, 5);
-
+      return availableTrendMarkets;
     }
 
     return valid;
-
   });
-
 }, [availableTrendMarkets]);
   
   const vsTargetMonthOptions = useMemo(() => {
