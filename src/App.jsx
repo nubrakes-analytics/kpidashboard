@@ -4744,7 +4744,13 @@ function Dashboard() {
     [rawData, market, chanCat]
   );
 
-  const availableTrendMarkets = useMemo(() => {
+ 
+  const marketTrendSeries = useMemo(
+  () => buildSeriesBreakdown(filtered, period, "market"),
+  [filtered, period]
+);
+
+ const availableTrendMarkets = useMemo(() => {
 
   return marketTrendSeries
 
@@ -4777,11 +4783,7 @@ useEffect(() => {
   });
 
 }, [availableTrendMarkets]);
-  const marketTrendSeries = useMemo(
-  () => buildSeriesBreakdown(filtered, period, "market"),
-  [filtered, period]
-);
-
+  
   const vsTargetMonthOptions = useMemo(() => {
   const source = filtered.length ? filtered : rawData;
   return [...new Set(source.map(r => (r.Month || "").slice(0, 7)).filter(Boolean))].sort();
