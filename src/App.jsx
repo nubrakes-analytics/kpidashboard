@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 
 const DATA_URL =
   "https://nubrakes-analytics.github.io/NuBrakes-Copilot/data/fact_nubrakes_channel_market_kpi_daily.json";
+const VIOC_DATA_URL =
+  "https://nubrakes-analytics.github.io/NuBrakes-Copilot/data/fact_nubrakes_vioc_messages_daily.json";
 const AI_MODEL = "gpt-4.1";
 const AI_ENDPOINT = "/api/ai";
 
@@ -4583,6 +4585,1068 @@ function VsTargetTab({
   );
 }
 
+const VIOC_BUCKET_COLORS = [
+  "#2563eb",
+  "#7c3aed",
+  "#db2777",
+  "#ea580c",
+  "#ca8a04",
+  "#16a34a",
+  "#0891b2",
+  "#4f46e5",
+  "#be123c",
+  "#475569"
+];
+
+const VIOC_TABLE_COLUMNS = [
+  { key: "date", label: "Date" },
+  { key: "market", label: "Market" },
+  { key: "zip", label: "ZIP" },
+  { key: "inquiry_id", label: "Inquiry ID" },
+  { key: "vioc_bucket", label: "VIOC Bucket" },
+  { key: "vioc_tactic", label: "VIOC Tactic" },
+  { key: "vioc_language", label: "VIOC Language" },
+  { key: "medium", label: "Medium" },
+  { key: "campaign_name", label: "Campaign Name" },
+  { key: "source", label: "Source" },
+  { key: "device_type", label: "Device Type" },
+  { key: "marketedservice", label: "Marketed Service" },
+  { key: "status", label: "Status" },
+  { key: "revenue_pre_tax", label: "Revenue (Pre-Tax)", numeric: true },
+  { key: "serviceurgency", label: "Service Urgency" },
+  { key: "vehicle", label: "Vehicle (Year / Make / Model)" }
+];
+
+function viocDateKey(value) {
+  return String(value || "").slice(0, 10);
+}
+
+function viocShiftDate(dateKey, days) {
+  const d = new Date(dateKey + "T12:00:00");
+  if (isNaN(d.getTime())) return "";
+  d.setDate(d.getDate() + days);
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0")
+  ].join("-");
+}
+
+function viocFormatDate(value, options = { month: "short", day: "numeric", year: "numeric" }) {
+  const key = viocDateKey(value);
+  if (!key) return "—";
+  const d = new Date(key + "T12:00:00");
+  return isNaN(d.getTime()) ? key : d.toLocaleDateString("en-US", options);
+}
+
+function viocPeriodKey(dateKey, granularity) {
+  if (granularity === "monthly") return dateKey.slice(0, 7);
+  if (granularity === "weekly") {
+    const d = new Date(dateKey + "T12:00:00");
+    if (isNaN(d.getTime())) return "";
+    const day = d.getDay();
+    d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+    return [
+      d.getFullYear(),
+      String(d.getMonth() + 1).padStart(2, "0"),
+      String(d.getDate()).padStart(2, "0")
+    ].join("-");
+  }
+  return dateKey;
+}
+
+function viocFormatPeriod(value, granularity) {
+  if (granularity === "monthly") {
+    return viocFormatDate(value + "-01", { month: "short", year: "2-digit" });
+  }
+  if (granularity === "weekly") {
+    return "Wk of " + viocFormatDate(value, { month: "short", day: "numeric" });
+  }
+  return viocFormatDate(value, { month: "short", day: "numeric" });
+}
+
+function viocNextPeriod(value, granularity) {
+  if (granularity === "monthly") {
+    const d = new Date(value + "-01T12:00:00");
+    d.setMonth(d.getMonth() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+  return viocShiftDate(value, granularity === "weekly" ? 7 : 1);
+}
+
+function viocVehicle(row) {
+  return [row.year, row.make, row.model].filter(Boolean).join(" ") || "—";
+}
+
+function viocColumnValue(row, key) {
+  if (key === "vehicle") return viocVehicle(row);
+  if (key === "date") return viocDateKey(row.date);
+  if (key === "revenue_pre_tax") {
+    const cleaned = String(row.revenue_pre_tax ?? "").replace(/[$,]/g, "");
+    const value = Number(cleaned);
+    return Number.isFinite(value) ? value : 0;
+  }
+  return row[key] ?? "";
+}
+
+function viocCsvCell(value) {
+  const stringValue = String(value ?? "");
+  return '"' + stringValue.replace(/"/g, '""') + '"';
+}
+
+function downloadViocCsv(rows, startDate, endDate) {
+  if (typeof document === "undefined") return;
+  const header = VIOC_TABLE_COLUMNS.map(column => viocCsvCell(column.label)).join(",");
+  const body = rows.map(row =>
+    VIOC_TABLE_COLUMNS.map(column => {
+      let value = viocColumnValue(row, column.key);
+      if (column.key === "date") value = viocDateKey(row.date);
+      if (column.key === "revenue_pre_tax") value = row.revenue_pre_tax ?? "";
+      return viocCsvCell(value);
+    }).join(",")
+  );
+  const blob = new Blob([[header, ...body].join("\n")], {
+    type: "text/csv;charset=utf-8"
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `vioc-messages-${startDate || "start"}-to-${endDate || "end"}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function ViocVolumeChart({ data, buckets, bucketColors, hiddenBuckets, onToggleBucket, granularity }) {
+  const h = React.createElement;
+  const width = 960;
+  const height = 330;
+  const pad = { top: 20, right: 22, bottom: 56, left: 52 };
+  const plotWidth = width - pad.left - pad.right;
+  const plotHeight = height - pad.top - pad.bottom;
+  const visibleBuckets = buckets.filter(bucket => !hiddenBuckets.has(bucket));
+  const values = data.flatMap(point => visibleBuckets.map(bucket => point.values[bucket] || 0));
+  const rawMax = Math.max(0, ...values);
+  const magnitude = rawMax > 0 ? Math.pow(10, Math.floor(Math.log10(Math.max(1, rawMax / 4)))) : 1;
+  const normalized = rawMax / Math.max(1, magnitude * 4);
+  const stepMultiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const step = Math.max(1, magnitude * stepMultiplier);
+  const yMax = Math.max(step * 4, Math.ceil(rawMax / step) * step);
+  const x = index => pad.left + (data.length <= 1 ? plotWidth / 2 : (index / (data.length - 1)) * plotWidth);
+  const y = value => pad.top + plotHeight - (value / yMax) * plotHeight;
+  const yTicks = [0, 1, 2, 3, 4].map(i => (yMax / 4) * i);
+  const tickTarget = Math.min(data.length, 7);
+  const xTickIndexes = [];
+  for (let i = 0; i < tickTarget; i += 1) {
+    const index = tickTarget === 1 ? 0 : Math.round((i / (tickTarget - 1)) * (data.length - 1));
+    if (!xTickIndexes.includes(index)) xTickIndexes.push(index);
+  }
+
+  return h(
+    "div",
+    null,
+    h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          marginBottom: 12
+        },
+        role: "group",
+        "aria-label": "Toggle VIOC bucket series"
+      },
+      ...buckets.map(bucket => {
+        const hidden = hiddenBuckets.has(bucket);
+        return h(
+          "button",
+          {
+            key: bucket,
+            type: "button",
+            onClick: () => onToggleBucket(bucket),
+            "aria-pressed": !hidden,
+            style: {
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "5px 9px",
+              borderRadius: 999,
+              border: "1px solid " + (hidden ? "#e5e7eb" : bucketColors[bucket]),
+              background: hidden ? "#fff" : bucketColors[bucket] + "12",
+              color: hidden ? "#9ca3af" : "#374151",
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: "pointer",
+              textDecoration: hidden ? "line-through" : "none"
+            }
+          },
+          h("span", {
+            style: {
+              width: 9,
+              height: 9,
+              borderRadius: "50%",
+              background: bucketColors[bucket],
+              opacity: hidden ? 0.3 : 1
+            }
+          }),
+          bucket
+        );
+      })
+    ),
+    !data.length
+      ? h(
+          "div",
+          {
+            style: {
+              minHeight: 260,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#9ca3af",
+              fontSize: 13,
+              border: "1px dashed #e5e7eb",
+              borderRadius: 10
+            }
+          },
+          "No inquiries match the selected filters."
+        )
+      : !visibleBuckets.length
+      ? h(
+          "div",
+          {
+            style: {
+              minHeight: 260,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#9ca3af",
+              fontSize: 13,
+              border: "1px dashed #e5e7eb",
+              borderRadius: 10
+            }
+          },
+          "All series are hidden. Use the legend to show a bucket."
+        )
+      : h(
+          "div",
+          { style: { width: "100%", overflowX: "auto" } },
+          h(
+            "svg",
+            {
+              viewBox: `0 0 ${width} ${height}`,
+              role: "img",
+              "aria-label": "VIOC inquiry volume trend by bucket",
+              style: { width: "100%", minWidth: 620, height: "auto", display: "block" }
+            },
+            ...yTicks.map(value =>
+              h(
+                "g",
+                { key: "y-" + value },
+                h("line", {
+                  x1: pad.left,
+                  x2: width - pad.right,
+                  y1: y(value),
+                  y2: y(value),
+                  stroke: "#e5e7eb",
+                  strokeWidth: 1
+                }),
+                h(
+                  "text",
+                  {
+                    x: pad.left - 10,
+                    y: y(value) + 4,
+                    textAnchor: "end",
+                    fontSize: 11,
+                    fill: "#94a3b8"
+                  },
+                  Math.round(value).toLocaleString()
+                )
+              )
+            ),
+            ...xTickIndexes.map(index =>
+              h(
+                "text",
+                {
+                  key: "x-" + index,
+                  x: x(index),
+                  y: height - 22,
+                  textAnchor: "middle",
+                  fontSize: 11,
+                  fill: "#94a3b8"
+                },
+                viocFormatPeriod(data[index].label, granularity)
+              )
+            ),
+            ...visibleBuckets.map(bucket => {
+              const points = data.map((point, index) => `${x(index)},${y(point.values[bucket] || 0)}`).join(" ");
+              return h(
+                "g",
+                { key: bucket },
+                h("polyline", {
+                  points,
+                  fill: "none",
+                  stroke: bucketColors[bucket],
+                  strokeWidth: 2.5,
+                  strokeLinejoin: "round",
+                  strokeLinecap: "round"
+                }),
+                ...data.map((point, index) =>
+                  h(
+                    "circle",
+                    {
+                      key: bucket + "-" + point.label,
+                      cx: x(index),
+                      cy: y(point.values[bucket] || 0),
+                      r: data.length > 45 ? 2 : 3,
+                      fill: "#fff",
+                      stroke: bucketColors[bucket],
+                      strokeWidth: 1.5
+                    },
+                    h(
+                      "title",
+                      null,
+                      `${bucket} · ${viocFormatPeriod(point.label, granularity)}: ${(point.values[bucket] || 0).toLocaleString()} inquiries`
+                    )
+                  )
+                )
+              );
+            })
+          )
+        )
+  );
+}
+
+function ViocMessagesTab({ isPhone, isTablet }) {
+  const h = React.createElement;
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [granularity, setGranularity] = useState("daily");
+  const [selectedBuckets, setSelectedBuckets] = useState([]);
+  const [hiddenBucketNames, setHiddenBucketNames] = useState([]);
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState({ key: "date", direction: "desc" });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const bucketInitRef = useRef(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    fetch(VIOC_DATA_URL, { signal: controller.signal })
+      .then(response => {
+        if (!response.ok) throw new Error(`VIOC data request failed (${response.status})`);
+        return response.json();
+      })
+      .then(data => {
+        const nextRows = Array.isArray(data) ? data : [];
+        setRows(nextRows);
+        const dates = nextRows.map(row => viocDateKey(row.date)).filter(Boolean).sort();
+        if (dates.length) {
+          const maxDate = dates[dates.length - 1];
+          setEndDate(maxDate);
+          setStartDate(viocShiftDate(maxDate, -89));
+        }
+        setError("");
+        setLoading(false);
+      })
+      .catch(fetchError => {
+        if (fetchError.name === "AbortError") return;
+        setError("VIOC message data could not be loaded. Please refresh to try again.");
+        setLoading(false);
+      });
+    return () => controller.abort();
+  }, []);
+
+  const buckets = useMemo(
+    () => [...new Set(rows.map(row => row.vioc_bucket || "Uncategorized"))].sort(),
+    [rows]
+  );
+
+  const bucketColors = useMemo(() => {
+    const colors = {};
+    buckets.forEach((bucket, index) => {
+      colors[bucket] = VIOC_BUCKET_COLORS[index % VIOC_BUCKET_COLORS.length];
+    });
+    return colors;
+  }, [buckets]);
+
+  useEffect(() => {
+    if (!buckets.length || bucketInitRef.current) return;
+    bucketInitRef.current = true;
+    setSelectedBuckets(buckets);
+  }, [buckets]);
+
+  const selectedBucketSet = useMemo(() => new Set(selectedBuckets), [selectedBuckets]);
+  const hiddenBuckets = useMemo(() => new Set(hiddenBucketNames), [hiddenBucketNames]);
+
+  const filteredRows = useMemo(
+    () => rows.filter(row => {
+      const date = viocDateKey(row.date);
+      const bucket = row.vioc_bucket || "Uncategorized";
+      return (
+        (!startDate || date >= startDate) &&
+        (!endDate || date <= endDate) &&
+        selectedBucketSet.has(bucket)
+      );
+    }),
+    [rows, startDate, endDate, selectedBucketSet]
+  );
+
+  const searchedRows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return filteredRows;
+    return filteredRows.filter(row =>
+      VIOC_TABLE_COLUMNS.some(column =>
+        String(viocColumnValue(row, column.key)).toLowerCase().includes(query)
+      )
+    );
+  }, [filteredRows, search]);
+
+  const sortedRows = useMemo(() => {
+    const column = VIOC_TABLE_COLUMNS.find(item => item.key === sort.key);
+    return [...searchedRows].sort((a, b) => {
+      const av = viocColumnValue(a, sort.key);
+      const bv = viocColumnValue(b, sort.key);
+      let comparison;
+      if (column?.numeric) comparison = Number(av || 0) - Number(bv || 0);
+      else comparison = String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: "base" });
+      return sort.direction === "asc" ? comparison : -comparison;
+    });
+  }, [searchedRows, sort]);
+
+  const pageCount = Math.max(1, Math.ceil(sortedRows.length / pageSize));
+  const pageRows = useMemo(
+    () => sortedRows.slice((page - 1) * pageSize, page * pageSize),
+    [sortedRows, page, pageSize]
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [startDate, endDate, selectedBuckets, search, pageSize]);
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+
+  const trendData = useMemo(() => {
+    const grouped = {};
+    filteredRows.forEach(row => {
+      const label = viocPeriodKey(viocDateKey(row.date), granularity);
+      const bucket = row.vioc_bucket || "Uncategorized";
+      if (!label) return;
+      if (!grouped[label]) grouped[label] = {};
+      grouped[label][bucket] = (grouped[label][bucket] || 0) + 1;
+    });
+    const labels = Object.keys(grouped).sort();
+    if (!labels.length) return [];
+    const complete = [];
+    let cursor = labels[0];
+    const last = labels[labels.length - 1];
+    while (cursor && cursor <= last && complete.length < 1000) {
+      complete.push({ label: cursor, values: grouped[cursor] || {} });
+      cursor = viocNextPeriod(cursor, granularity);
+    }
+    return complete;
+  }, [filteredRows, granularity]);
+
+  const topValue = useCallback((sourceRows, getter, ignoreBlank = false) => {
+    const counts = {};
+    sourceRows.forEach(row => {
+      const value = String(getter(row) || "").trim();
+      if (!value && ignoreBlank) return;
+      const label = value || "Unknown";
+      counts[label] = (counts[label] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || ["—", 0];
+  }, []);
+
+  const uniqueBucketCount = new Set(filteredRows.map(row => row.vioc_bucket || "Uncategorized")).size;
+  const topBucket = topValue(filteredRows, row => row.vioc_bucket);
+  const topMarket = topValue(filteredRows, row => row.market, true);
+  const emailCount = filteredRows.filter(row => String(row.vioc_tactic).toLowerCase() === "email").length;
+  const flyerCount = filteredRows.filter(row => String(row.vioc_tactic).toLowerCase() === "flyer").length;
+  const emailPct = filteredRows.length ? (emailCount / filteredRows.length) * 100 : 0;
+  const flyerPct = filteredRows.length ? (flyerCount / filteredRows.length) * 100 : 0;
+  const dataMinDate = rows.length ? rows.map(row => viocDateKey(row.date)).filter(Boolean).sort()[0] : "";
+  const dataMaxDate = rows.length ? rows.map(row => viocDateKey(row.date)).filter(Boolean).sort().slice(-1)[0] : "";
+
+  const resetFilters = () => {
+    setEndDate(dataMaxDate);
+    setStartDate(viocShiftDate(dataMaxDate, -89));
+    setSelectedBuckets(buckets);
+    setHiddenBucketNames([]);
+    setSearch("");
+    setGranularity("daily");
+    setSort({ key: "date", direction: "desc" });
+  };
+
+  const toggleBucketFilter = bucket => {
+    setSelectedBuckets(current =>
+      current.includes(bucket) ? current.filter(item => item !== bucket) : [...current, bucket]
+    );
+  };
+
+  const toggleLegendBucket = bucket => {
+    setHiddenBucketNames(current =>
+      current.includes(bucket) ? current.filter(item => item !== bucket) : [...current, bucket]
+    );
+  };
+
+  const onSort = key => {
+    setSort(current => ({
+      key,
+      direction: current.key === key && current.direction === "asc" ? "desc" : "asc"
+    }));
+  };
+
+  const controlStyle = {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "9px 10px",
+    border: "1px solid #dbe3ee",
+    borderRadius: 8,
+    background: "#fff",
+    color: "#334155",
+    fontSize: 13,
+    minHeight: 38
+  };
+
+  const smallLabelStyle = {
+    display: "block",
+    marginBottom: 5,
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: ".05em",
+    textTransform: "uppercase"
+  };
+
+  if (loading) {
+    return h(
+      "div",
+      { style: { ...baseCardStyle, minHeight: 360, display: "grid", placeItems: "center" } },
+      h(
+        "div",
+        { style: { textAlign: "center", color: "#64748b", fontSize: 13 } },
+        h("div", {
+          style: {
+            width: 30,
+            height: 30,
+            margin: "0 auto 12px",
+            border: "3px solid #e2e8f0",
+            borderTopColor: "#2563eb",
+            borderRadius: "50%",
+            animation: "spin 1s linear infinite"
+          }
+        }),
+        "Loading VIOC messages…"
+      )
+    );
+  }
+
+  if (error) {
+    return h(
+      "div",
+      {
+        style: {
+          ...baseCardStyle,
+          padding: 24,
+          borderColor: "#fecaca",
+          background: "#fff7f7",
+          color: "#b91c1c",
+          fontSize: 13
+        }
+      },
+      error
+    );
+  }
+
+  const kpis = [
+    { label: "Total VIOC Inquiries", value: filteredRows.length.toLocaleString(), detail: "Filtered records", color: "#2563eb" },
+    { label: "Unique VIOC Buckets", value: uniqueBucketCount.toLocaleString(), detail: `${buckets.length} in full dataset`, color: "#7c3aed" },
+    { label: "Top VIOC Bucket", value: topBucket[0], detail: `${topBucket[1].toLocaleString()} inquiries`, color: "#db2777" },
+    { label: "Top Market", value: topMarket[0], detail: `${topMarket[1].toLocaleString()} inquiries`, color: "#16a34a" },
+    { label: "Email vs Flyer Volume", value: `${emailPct.toFixed(1)}% / ${flyerPct.toFixed(1)}%`, detail: "Email / Flyer share of total", color: "#ea580c" }
+  ];
+
+  return h(
+    "div",
+    null,
+    h(
+      "div",
+      {
+        style: {
+          ...baseCardStyle,
+          padding: isPhone ? 14 : 18,
+          marginBottom: 14
+        }
+      },
+      h(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: isPhone ? "stretch" : "center",
+            justifyContent: "space-between",
+            flexDirection: isPhone ? "column" : "row",
+            gap: 12,
+            marginBottom: 16
+          }
+        },
+        h(
+          "div",
+          null,
+          h("div", { style: { fontSize: 15, fontWeight: 750, color: "#0f172a" } }, "VIOC Messages"),
+          h(
+            "div",
+            { style: { marginTop: 3, color: "#64748b", fontSize: 11 } },
+            `${rows.length.toLocaleString()} records · ${viocFormatDate(dataMinDate)}–${viocFormatDate(dataMaxDate)} · Each record is one inquiry`
+          )
+        ),
+        h(
+          "button",
+          {
+            type: "button",
+            onClick: resetFilters,
+            style: {
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #dbe3ee",
+              background: "#fff",
+              color: "#475569",
+              fontSize: 12,
+              fontWeight: 650,
+              cursor: "pointer"
+            }
+          },
+          "Reset to last 90 days"
+        )
+      ),
+      h(
+        "div",
+        {
+          style: {
+            display: "grid",
+            gridTemplateColumns: isPhone ? "1fr" : isTablet ? "repeat(2,minmax(0,1fr))" : "160px 160px minmax(230px,1fr) minmax(250px,1.25fr)",
+            gap: 12,
+            alignItems: "start"
+          }
+        },
+        h(
+          "label",
+          null,
+          h("span", { style: smallLabelStyle }, "Start date"),
+          h("input", {
+            type: "date",
+            value: startDate,
+            min: dataMinDate,
+            max: endDate || dataMaxDate,
+            onChange: event => setStartDate(event.target.value),
+            style: controlStyle
+          })
+        ),
+        h(
+          "label",
+          null,
+          h("span", { style: smallLabelStyle }, "End date"),
+          h("input", {
+            type: "date",
+            value: endDate,
+            min: startDate || dataMinDate,
+            max: dataMaxDate,
+            onChange: event => setEndDate(event.target.value),
+            style: controlStyle
+          })
+        ),
+        h(
+          "div",
+          null,
+          h("span", { style: smallLabelStyle }, "Time granularity"),
+          h(
+            "div",
+            { style: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 3, padding: 3, borderRadius: 9, background: "#f1f5f9" } },
+            ...[["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"]].map(([value, label]) =>
+              h(
+                "button",
+                {
+                  key: value,
+                  type: "button",
+                  onClick: () => setGranularity(value),
+                  "aria-pressed": granularity === value,
+                  style: {
+                    padding: "7px 8px",
+                    border: 0,
+                    borderRadius: 7,
+                    background: granularity === value ? "#fff" : "transparent",
+                    boxShadow: granularity === value ? "0 1px 3px rgba(15,23,42,.12)" : "none",
+                    color: granularity === value ? "#0f172a" : "#64748b",
+                    fontSize: 12,
+                    fontWeight: 650,
+                    cursor: "pointer"
+                  }
+                },
+                label
+              )
+            )
+          )
+        ),
+        h(
+          "div",
+          null,
+          h("span", { style: smallLabelStyle }, "VIOC Bucket"),
+          h(
+            "details",
+            {
+              style: {
+                position: "relative",
+                border: "1px solid #dbe3ee",
+                borderRadius: 8,
+                background: "#fff"
+              }
+            },
+            h(
+              "summary",
+              {
+                style: {
+                  padding: "9px 10px",
+                  color: "#334155",
+                  fontSize: 13,
+                  cursor: "pointer",
+                  listStylePosition: "inside",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis"
+                }
+              },
+              selectedBuckets.length === buckets.length
+                ? `All buckets (${buckets.length})`
+                : `${selectedBuckets.length} of ${buckets.length} buckets`
+            ),
+            h(
+              "div",
+              {
+                style: {
+                  position: isPhone ? "static" : "absolute",
+                  right: 0,
+                  top: isPhone ? "auto" : "calc(100% + 6px)",
+                  zIndex: 40,
+                  width: isPhone ? "auto" : 330,
+                  maxWidth: "calc(100vw - 48px)",
+                  padding: 10,
+                  border: "1px solid #dbe3ee",
+                  borderRadius: 10,
+                  background: "#fff",
+                  boxShadow: "0 12px 30px rgba(15,23,42,.14)"
+                }
+              },
+              h(
+                "div",
+                { style: { display: "flex", gap: 8, marginBottom: 8 } },
+                h(
+                  "button",
+                  { type: "button", onClick: () => setSelectedBuckets(buckets), style: { border: 0, background: "none", color: "#2563eb", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: 0 } },
+                  "Select all"
+                ),
+                h(
+                  "button",
+                  { type: "button", onClick: () => setSelectedBuckets([]), style: { border: 0, background: "none", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: 0 } },
+                  "Clear"
+                )
+              ),
+              h(
+                "div",
+                { style: { display: "grid", gap: 7, maxHeight: 230, overflowY: "auto" } },
+                ...buckets.map(bucket =>
+                  h(
+                    "label",
+                    { key: bucket, style: { display: "flex", alignItems: "flex-start", gap: 8, color: "#334155", fontSize: 12, cursor: "pointer" } },
+                    h("input", {
+                      type: "checkbox",
+                      checked: selectedBucketSet.has(bucket),
+                      onChange: () => toggleBucketFilter(bucket),
+                      style: { marginTop: 2, accentColor: bucketColors[bucket] }
+                    }),
+                    h("span", null, bucket)
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    ),
+    h(
+      "div",
+      {
+        style: {
+          display: "grid",
+          gridTemplateColumns: isPhone ? "repeat(2,minmax(0,1fr))" : isTablet ? "repeat(3,minmax(0,1fr))" : "repeat(5,minmax(0,1fr))",
+          gap: 10,
+          marginBottom: 14
+        }
+      },
+      ...kpis.map(kpi =>
+        h(
+          "div",
+          {
+            key: kpi.label,
+            style: {
+              ...baseCardStyle,
+              padding: "14px 15px",
+              borderTop: `3px solid ${kpi.color}`,
+              minWidth: 0
+            }
+          },
+          h("div", { style: { color: "#64748b", fontSize: 10, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", marginBottom: 7 } }, kpi.label),
+          h("div", { title: kpi.value, style: { color: "#0f172a", fontSize: kpi.label.includes("Top") ? 15 : 20, fontWeight: 750, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, kpi.value),
+          h("div", { style: { color: "#94a3b8", fontSize: 10, marginTop: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, kpi.detail)
+        )
+      )
+    ),
+    h(
+      "div",
+      { style: { ...baseCardStyle, padding: isPhone ? 14 : 18, marginBottom: 14 } },
+      h(
+        "div",
+        { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 14 } },
+        h(
+          "div",
+          null,
+          h("div", { style: { color: "#0f172a", fontSize: 14, fontWeight: 750 } }, "Volume Trend"),
+          h("div", { style: { color: "#64748b", fontSize: 11, marginTop: 3 } }, `${filteredRows.length.toLocaleString()} inquiries · Count of records grouped by VIOC Bucket`)
+        ),
+        h("span", { style: { flexShrink: 0, padding: "4px 8px", borderRadius: 999, background: "#eff6ff", color: "#2563eb", fontSize: 10, fontWeight: 700 } }, granularity.charAt(0).toUpperCase() + granularity.slice(1))
+      ),
+      h(ViocVolumeChart, {
+        data: trendData,
+        buckets: selectedBuckets,
+        bucketColors,
+        hiddenBuckets,
+        onToggleBucket: toggleLegendBucket,
+        granularity
+      })
+    ),
+    h(
+      "div",
+      { style: { ...baseCardStyle, padding: 0, overflow: "hidden" } },
+      h(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: isPhone ? "stretch" : "center",
+            justifyContent: "space-between",
+            flexDirection: isPhone ? "column" : "row",
+            gap: 12,
+            padding: isPhone ? 14 : "16px 18px",
+            borderBottom: "1px solid #e2e8f0"
+          }
+        },
+        h(
+          "div",
+          null,
+          h("div", { style: { color: "#0f172a", fontSize: 14, fontWeight: 750 } }, "Inquiry Data"),
+          h("div", { style: { color: "#64748b", fontSize: 11, marginTop: 3 } }, `${sortedRows.length.toLocaleString()} filtered rows · Sorted by ${VIOC_TABLE_COLUMNS.find(column => column.key === sort.key)?.label || sort.key} ${sort.direction === "asc" ? "ascending" : "descending"}`)
+        ),
+        h(
+          "div",
+          { style: { display: "flex", gap: 8, flexDirection: isPhone ? "column" : "row", minWidth: isPhone ? 0 : 390 } },
+          h(
+            "label",
+            { style: { flex: 1, position: "relative" } },
+            h("span", { style: { position: "absolute", left: 10, top: 9, color: "#94a3b8", fontSize: 14 } }, "⌕"),
+            h("input", {
+              type: "search",
+              value: search,
+              onChange: event => setSearch(event.target.value),
+              placeholder: "Search filtered inquiries…",
+              "aria-label": "Search VIOC inquiries",
+              style: { ...controlStyle, paddingLeft: 30 }
+            })
+          ),
+          h(
+            "button",
+            {
+              type: "button",
+              onClick: () => downloadViocCsv(sortedRows, startDate, endDate),
+              disabled: !sortedRows.length,
+              style: {
+                padding: "9px 13px",
+                borderRadius: 8,
+                border: "1px solid #1d4ed8",
+                background: sortedRows.length ? "#2563eb" : "#bfdbfe",
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: sortedRows.length ? "pointer" : "not-allowed",
+                whiteSpace: "nowrap"
+              }
+            },
+            "↓ Export CSV"
+          )
+        )
+      ),
+      h(
+        "div",
+        { style: { overflowX: "auto", width: "100%" } },
+        h(
+          "table",
+          { style: { width: "100%", minWidth: 1880, borderCollapse: "collapse", tableLayout: "auto" } },
+          h(
+            "thead",
+            null,
+            h(
+              "tr",
+              null,
+              ...VIOC_TABLE_COLUMNS.map(column =>
+                h(
+                  "th",
+                  {
+                    key: column.key,
+                    scope: "col",
+                    "aria-sort": sort.key === column.key ? (sort.direction === "asc" ? "ascending" : "descending") : "none",
+                    style: {
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 2,
+                      padding: "10px 12px",
+                      borderBottom: "1px solid #dbe3ee",
+                      background: "#f8fafc",
+                      textAlign: column.numeric ? "right" : "left",
+                      whiteSpace: "nowrap"
+                    }
+                  },
+                  h(
+                    "button",
+                    {
+                      type: "button",
+                      onClick: () => onSort(column.key),
+                      style: {
+                        border: 0,
+                        padding: 0,
+                        background: "none",
+                        color: sort.key === column.key ? "#0f172a" : "#64748b",
+                        fontSize: 10,
+                        fontWeight: 750,
+                        letterSpacing: ".035em",
+                        textTransform: "uppercase",
+                        cursor: "pointer"
+                      }
+                    },
+                    column.label,
+                    sort.key === column.key ? (sort.direction === "asc" ? " ↑" : " ↓") : " ↕"
+                  )
+                )
+              )
+            )
+          ),
+          h(
+            "tbody",
+            null,
+            pageRows.length
+              ? pageRows.map((row, rowIndex) =>
+                  h(
+                    "tr",
+                    { key: row.inquiry_id || `${viocDateKey(row.date)}-${rowIndex}` },
+                    ...VIOC_TABLE_COLUMNS.map(column => {
+                      const rawValue = viocColumnValue(row, column.key);
+                      const displayValue =
+                        column.key === "date"
+                          ? viocFormatDate(row.date)
+                          : column.key === "revenue_pre_tax"
+                          ? row.revenue_pre_tax === "" || row.revenue_pre_tax == null
+                            ? "—"
+                            : "$" + Number(rawValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          : rawValue || "—";
+                      return h(
+                        "td",
+                        {
+                          key: column.key,
+                          title: String(displayValue),
+                          style: {
+                            maxWidth: column.key === "serviceurgency" ? 270 : column.key === "campaign_name" || column.key === "vioc_bucket" ? 220 : 180,
+                            padding: "10px 12px",
+                            borderBottom: "1px solid #f1f5f9",
+                            color: column.key === "inquiry_id" ? "#2563eb" : "#334155",
+                            fontFamily: column.key === "inquiry_id" ? "ui-monospace,SFMono-Regular,Menlo,monospace" : "inherit",
+                            fontSize: 11,
+                            lineHeight: 1.4,
+                            textAlign: column.numeric ? "right" : "left",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis"
+                          }
+                        },
+                        displayValue
+                      );
+                    })
+                  )
+                )
+              : h(
+                  "tr",
+                  null,
+                  h("td", { colSpan: VIOC_TABLE_COLUMNS.length, style: { padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13 } }, "No inquiries match the current filters and search.")
+                )
+          )
+        )
+      ),
+      h(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: isPhone ? "stretch" : "center",
+            justifyContent: "space-between",
+            flexDirection: isPhone ? "column" : "row",
+            gap: 10,
+            padding: "12px 16px",
+            borderTop: "1px solid #e2e8f0",
+            color: "#64748b",
+            fontSize: 11
+          }
+        },
+        h(
+          "div",
+          null,
+          sortedRows.length
+            ? `Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, sortedRows.length)} of ${sortedRows.length.toLocaleString()}`
+            : "Showing 0 results"
+        ),
+        h(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+          h(
+            "label",
+            { style: { display: "flex", alignItems: "center", gap: 5 } },
+            "Rows",
+            h(
+              "select",
+              { value: pageSize, onChange: event => setPageSize(Number(event.target.value)), style: { padding: "6px 8px", border: "1px solid #dbe3ee", borderRadius: 7, background: "#fff", color: "#475569", fontSize: 11 } },
+              ...[25, 50, 100].map(size => h("option", { key: size, value: size }, size))
+            )
+          ),
+          h(
+            "button",
+            { type: "button", onClick: () => setPage(current => Math.max(1, current - 1)), disabled: page <= 1, style: { padding: "6px 10px", border: "1px solid #dbe3ee", borderRadius: 7, background: "#fff", color: page <= 1 ? "#cbd5e1" : "#475569", cursor: page <= 1 ? "not-allowed" : "pointer" } },
+            "← Previous"
+          ),
+          h("span", { style: { color: "#334155", fontWeight: 650 } }, `Page ${page} of ${pageCount}`),
+          h(
+            "button",
+            { type: "button", onClick: () => setPage(current => Math.min(pageCount, current + 1)), disabled: page >= pageCount, style: { padding: "6px 10px", border: "1px solid #dbe3ee", borderRadius: 7, background: "#fff", color: page >= pageCount ? "#cbd5e1" : "#475569", cursor: page >= pageCount ? "not-allowed" : "pointer" } },
+            "Next →"
+          )
+        )
+      )
+    )
+  );
+}
+
 const baseCardStyle = {
   background: "#fff",
   borderRadius: 12,
@@ -5018,7 +6082,9 @@ const prev = useMemo(() => {
         React.createElement(
           "p",
           { style: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" } },
-          "NuBrakes · " +
+          tab === "vioc"
+            ? "NuBrakes · VIOC Messages · Interactive inquiry explorer"
+            : "NuBrakes · " +
             market +
             " · " +
             chanCat +
@@ -5039,9 +6105,10 @@ const prev = useMemo(() => {
     : "Current Month"
   : periodLabel)
         ),
-        React.createElement(
-          "div",
-          { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 } },
+        tab !== "vioc"
+          ? React.createElement(
+              "div",
+              { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 } },
           React.createElement(
             "div",
             {
@@ -5082,9 +6149,11 @@ const prev = useMemo(() => {
                 "⚠️ Live data unavailable"
               )
             : null
-        )
+            )
+          : null
       ),
-      React.createElement(
+      tab !== "vioc"
+        ? React.createElement(
         "div",
         {
           style: {
@@ -5128,7 +6197,8 @@ const prev = useMemo(() => {
           React.createElement("option", null, "All Channels"),
           ...chanCats.map(c => React.createElement("option", { key: c }, c))
         )
-      ),
+      )
+        : null,
       React.createElement(
         "div",
         {
@@ -5139,7 +6209,7 @@ const prev = useMemo(() => {
             overflowX: "auto"
           }
         },
-        [["overview", "Overview"], ["trends", "Trends"], ["vsTarget", "vs Target"]].map(
+        [["overview", "Overview"], ["trends", "Trends"], ["vsTarget", "vs Target"], ["vioc", "VIOC Messages"]].map(
           ([t, label]) =>
             React.createElement(
               "button",
@@ -5897,7 +6967,10 @@ const prev = useMemo(() => {
       onMonthChange: setVsTargetMonth,
       monthOptions: vsTargetMonthOptions
     })
-  : null
+  : null,
+      tab === "vioc"
+        ? React.createElement(ViocMessagesTab, { isPhone, isTablet })
+        : null
     ),
     React.createElement(ChatOverlay, {
       open: chatOpen,
