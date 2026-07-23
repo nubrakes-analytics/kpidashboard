@@ -677,6 +677,61 @@ function buildTimeSeries(rows, period) {
   });
 }
 
+function buildChannelMixSeries(rows, period, metricKey) {
+  const timeKey = r =>
+    period === "day"
+      ? (r.date || "").slice(0, 10)
+      : period === "week"
+      ? (r.Week || "").slice(0, 10)
+      : (r.Month || "").slice(0, 7);
+
+  const labels = [...new Set(rows.map(timeKey).filter(Boolean))]
+    .sort()
+    .slice(period === "day" ? -60 : -12);
+  const labelSet = new Set(labels);
+  const channelTotals = {};
+  const valuesByLabel = {};
+
+  labels.forEach(label => {
+    valuesByLabel[label] = {};
+  });
+
+  rows.forEach(row => {
+    const label = timeKey(row);
+    if (!labelSet.has(label)) return;
+
+    const channel = row.cat || "Other";
+    const value = Number(row[metricKey]) || 0;
+    valuesByLabel[label][channel] = (valuesByLabel[label][channel] || 0) + value;
+    channelTotals[channel] = (channelTotals[channel] || 0) + value;
+  });
+
+  const preferredOrder = ["Core", "Brand", "GBL", "Referral", "Fleet", "Other"];
+  const channels = Object.keys(channelTotals)
+    .filter(channel => channelTotals[channel] > 0)
+    .sort((a, b) => {
+      const aIndex = preferredOrder.indexOf(a);
+      const bIndex = preferredOrder.indexOf(b);
+      if (aIndex !== -1 || bIndex !== -1) {
+        if (aIndex === -1) return 1;
+        if (bIndex === -1) return -1;
+        return aIndex - bIndex;
+      }
+      return channelTotals[b] - channelTotals[a] || a.localeCompare(b);
+    });
+
+  return {
+    channels,
+    data: labels.map(label => {
+      const point = { label };
+      channels.forEach(channel => {
+        point[channel] = valuesByLabel[label][channel] || 0;
+      });
+      return point;
+    })
+  };
+}
+
 function aggregateSeriesByToggle(rows, period) {
   const normalizedPeriod = period === "week" ? "week" : "month";
   const groups = {};
@@ -1981,6 +2036,427 @@ function MultiLineMetricChart({
           )
         )
       )
+    )
+  );
+}
+
+function ChannelMixTrendChart({
+  data,
+  mixData,
+  channels,
+  metricKey,
+  metric,
+  period,
+  pacing
+}) {
+  const [hoveredIndex, setHoveredIndex] = React.useState(null);
+
+  if (!Array.isArray(data) || !data.length || !Array.isArray(channels) || !channels.length) {
+    return null;
+  }
+
+  const isProjectionPeriod = period === "week" || period === "month";
+  const hasProjection = Boolean(pacing && isProjectionPeriod);
+  const lastIdx = data.length - 1;
+  const mixByLabel = {};
+
+  (mixData || []).forEach(point => {
+    mixByLabel[point.label] = point;
+  });
+
+  const rawTotals = data.map(point => Number(point[metricKey]) || 0);
+  const totals = rawTotals.map((value, index) =>
+    index === lastIdx && hasProjection ? pacing.projected ?? value : value
+  );
+
+  const stacks = data.map((point, index) => {
+    const source = mixByLabel[point.label] || {};
+    const rawParts = channels.map(channel => Number(source[channel]) || 0);
+    const rawTotal = rawParts.reduce((sum, value) => sum + value, 0);
+    const scale =
+      index === lastIdx && hasProjection && rawTotal > 0
+        ? totals[index] / rawTotal
+        : 1;
+
+    return rawParts.map(value => value * scale);
+  });
+
+  const stackTotals = stacks.map(parts => parts.reduce((sum, value) => sum + value, 0));
+  const maxValue = Math.max(...totals, ...stackTotals, 1);
+  const yMax = maxValue * 1.14;
+
+  const W = 680;
+  const H = 286;
+  const pL = 66;
+  const pB = 42;
+  const pT = 20;
+  const pR = 18;
+  const cW = W - pL - pR;
+  const cH = H - pB - pT;
+  const columnWidth = cW / data.length;
+  const barWidth = Math.max(2, Math.min(columnWidth * 0.62, 38));
+  const labelStep = Math.ceil(data.length / 10);
+  const xP = index => pL + columnWidth * index + columnWidth / 2;
+  const yP = value => pT + cH - (Math.max(0, value) / yMax) * cH;
+  const yTicks = Array.from({ length: 5 }, (_, index) => (yMax * index) / 4);
+
+  const fmtValue = value => {
+    if (metricKey === "revenue") return "$" + Math.round(value).toLocaleString();
+    return Math.round(value).toLocaleString();
+  };
+
+  const fmtAxis = value => {
+    if (metricKey === "revenue") {
+      if (value >= 1000000) return "$" + (value / 1000000).toFixed(1) + "M";
+      if (value >= 1000) return "$" + (value / 1000).toFixed(0) + "k";
+      return "$" + Math.round(value);
+    }
+    if (value >= 1000) return (value / 1000).toFixed(1) + "k";
+    return Math.round(value).toString();
+  };
+
+  const hoveredParts =
+    hoveredIndex === null
+      ? []
+      : channels
+          .map((channel, index) => ({
+            channel,
+            value: stacks[hoveredIndex][index],
+            color: getSeriesColor(channel, "channel")
+          }))
+          .filter(item => item.value > 0)
+          .sort((a, b) => b.value - a.value);
+  const tooltipWidth = 190;
+  const tooltipHeight = 54 + hoveredParts.length * 17;
+  const tooltipX = hoveredIndex === null ? 0 : xP(hoveredIndex);
+  const tooltipLeft =
+    tooltipX > W / 2 ? tooltipX - tooltipWidth - 12 : tooltipX + 12;
+  const tooltipIsProjected = hoveredIndex === lastIdx && hasProjection;
+
+  const totalLinePoints = totals
+    .map((value, index) => `${xP(index).toFixed(1)},${yP(value).toFixed(1)}`)
+    .join(" ");
+  const actualLinePoints = totals
+    .slice(0, hasProjection ? -1 : totals.length)
+    .map((value, index) => `${xP(index).toFixed(1)},${yP(value).toFixed(1)}`)
+    .join(" ");
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      "svg",
+      {
+        viewBox: `0 0 ${W} ${H}`,
+        role: "img",
+        "aria-label": `${metric.label} total trend with stacked acquisition channel mix`,
+        style: { width: "100%", height: "auto", overflow: "visible" },
+        onMouseLeave: () => setHoveredIndex(null)
+      },
+      yTicks.map((tick, index) => {
+        const y = yP(tick);
+        return React.createElement(
+          "g",
+          { key: "tick_" + index },
+          React.createElement("line", {
+            x1: pL,
+            x2: W - pR,
+            y1: y,
+            y2: y,
+            stroke: "#e5e7eb",
+            strokeWidth: 1
+          }),
+          React.createElement(
+            "text",
+            {
+              x: pL - 7,
+              y: y + 4,
+              textAnchor: "end",
+              fontSize: 10,
+              fill: "#9ca3af"
+            },
+            fmtAxis(tick)
+          )
+        );
+      }),
+      data.map((point, pointIndex) => {
+        let runningTotal = 0;
+        const isProjected = pointIndex === lastIdx && hasProjection;
+
+        return React.createElement(
+          "g",
+          { key: point.label },
+          channels.map((channel, channelIndex) => {
+            const value = stacks[pointIndex][channelIndex];
+            const start = runningTotal;
+            runningTotal += value;
+            const y = yP(runningTotal);
+            const height = Math.max(0, yP(start) - y);
+
+            return value > 0
+              ? React.createElement("rect", {
+                  key: channel,
+                  x: xP(pointIndex) - barWidth / 2,
+                  y,
+                  width: barWidth,
+                  height,
+                  fill: getSeriesColor(channel, "channel"),
+                  opacity: isProjected ? 0.68 : hoveredIndex === pointIndex ? 1 : 0.86
+                })
+              : null;
+          }),
+          isProjected
+            ? React.createElement("rect", {
+                x: xP(pointIndex) - barWidth / 2,
+                y: yP(stackTotals[pointIndex]),
+                width: barWidth,
+                height: yP(0) - yP(stackTotals[pointIndex]),
+                rx: 2,
+                fill: "none",
+                stroke: "#64748b",
+                strokeWidth: 1,
+                strokeDasharray: "3,2"
+              })
+            : null,
+          React.createElement("rect", {
+            x: xP(pointIndex) - columnWidth / 2,
+            y: pT,
+            width: columnWidth,
+            height: cH,
+            fill: "transparent",
+            style: { cursor: "pointer" },
+            onMouseEnter: () => setHoveredIndex(pointIndex),
+            onMouseMove: () => setHoveredIndex(pointIndex)
+          }),
+          pointIndex % labelStep === 0
+            ? React.createElement(
+                "text",
+                {
+                  x: xP(pointIndex),
+                  y: H - 7,
+                  textAnchor: "middle",
+                  fontSize: 9,
+                  fill: "#9ca3af"
+                },
+                fmtLabel(point.label, period)
+              )
+            : null
+        );
+      }),
+      hasProjection
+        ? React.createElement(
+            "g",
+            null,
+            actualLinePoints
+              ? React.createElement("polyline", {
+                  points: actualLinePoints,
+                  fill: "none",
+                  stroke: "#0f172a",
+                  strokeWidth: 2.5,
+                  strokeLinejoin: "round",
+                  strokeLinecap: "round"
+                })
+              : null,
+            data.length > 1
+              ? React.createElement("line", {
+                  x1: xP(lastIdx - 1),
+                  y1: yP(totals[lastIdx - 1]),
+                  x2: xP(lastIdx),
+                  y2: yP(totals[lastIdx]),
+                  stroke: "#0f172a",
+                  strokeWidth: 2.5,
+                  strokeLinecap: "round",
+                  strokeDasharray: "6,4"
+                })
+              : null
+          )
+        : React.createElement("polyline", {
+            points: totalLinePoints,
+            fill: "none",
+            stroke: "#0f172a",
+            strokeWidth: 2.5,
+            strokeLinejoin: "round",
+            strokeLinecap: "round"
+          }),
+      totals.map((value, index) =>
+        React.createElement("circle", {
+          key: "total_" + index,
+          cx: xP(index),
+          cy: yP(value),
+          r: hoveredIndex === index ? 4.5 : 3,
+          fill: "#0f172a",
+          stroke: "#fff",
+          strokeWidth: 1.5,
+          pointerEvents: "none"
+        })
+      ),
+      hoveredIndex !== null
+        ? React.createElement(
+            "g",
+            { pointerEvents: "none" },
+            React.createElement("line", {
+              x1: tooltipX,
+              x2: tooltipX,
+              y1: pT,
+              y2: pT + cH,
+              stroke: "#64748b",
+              strokeWidth: 1,
+              strokeDasharray: "3,3"
+            }),
+            React.createElement("rect", {
+              x: tooltipLeft,
+              y: 8,
+              width: tooltipWidth,
+              height: tooltipHeight,
+              rx: 8,
+              fill: "#0f172a",
+              opacity: 0.97
+            }),
+            React.createElement(
+              "text",
+              {
+                x: tooltipLeft + 12,
+                y: 25,
+                fontSize: 10,
+                fill: "#cbd5e1",
+                fontWeight: 600
+              },
+              fmtLabel(data[hoveredIndex].label, period) +
+                (tooltipIsProjected ? " · projected" : "")
+            ),
+            React.createElement(
+              "text",
+              {
+                x: tooltipLeft + 12,
+                y: 43,
+                fontSize: 11,
+                fill: "#fff",
+                fontWeight: 750
+              },
+              "Total"
+            ),
+            React.createElement(
+              "text",
+              {
+                x: tooltipLeft + tooltipWidth - 12,
+                y: 43,
+                textAnchor: "end",
+                fontSize: 11,
+                fill: "#fff",
+                fontWeight: 750
+              },
+              fmtValue(totals[hoveredIndex])
+            ),
+            hoveredParts.map((item, index) =>
+              React.createElement(
+                "g",
+                { key: item.channel },
+                React.createElement("circle", {
+                  cx: tooltipLeft + 15,
+                  cy: 58 + index * 17,
+                  r: 3,
+                  fill: item.color
+                }),
+                React.createElement(
+                  "text",
+                  {
+                    x: tooltipLeft + 24,
+                    y: 61 + index * 17,
+                    fontSize: 9.5,
+                    fill: "#e2e8f0"
+                  },
+                  item.channel
+                ),
+                React.createElement(
+                  "text",
+                  {
+                    x: tooltipLeft + tooltipWidth - 12,
+                    y: 61 + index * 17,
+                    textAnchor: "end",
+                    fontSize: 9.5,
+                    fill: "#e2e8f0",
+                    fontWeight: 650
+                  },
+                  fmtValue(item.value)
+                )
+              )
+            )
+          )
+        : null
+    ),
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "8px 14px",
+          marginTop: 8
+        }
+      },
+      React.createElement(
+        "span",
+        {
+          style: {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 11,
+            color: "#334155",
+            fontWeight: 700
+          }
+        },
+        React.createElement("span", {
+          style: {
+            display: "inline-block",
+            width: 22,
+            height: 3,
+            borderRadius: 3,
+            background: "#0f172a"
+          }
+        }),
+        "Total"
+      ),
+      channels.map(channel =>
+        React.createElement(
+          "span",
+          {
+            key: channel,
+            style: {
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: 11,
+              color: "#475569",
+              fontWeight: 600
+            }
+          },
+          React.createElement("span", {
+            style: {
+              display: "inline-block",
+              width: 9,
+              height: 9,
+              borderRadius: 2,
+              background: getSeriesColor(channel, "channel")
+            }
+          }),
+          channel
+        )
+      ),
+      hasProjection
+        ? React.createElement(
+            "span",
+            {
+              style: {
+                marginLeft: "auto",
+                fontSize: 10,
+                color: "#64748b"
+              }
+            },
+            "Latest period uses projected volume and current channel mix"
+          )
+        : null
     )
   );
 }
@@ -3419,19 +3895,27 @@ function CopilotOverlay({ open, onClose }) {
               minWidth: 0
             }
           },
-          React.createElement("img", {
-            src: "/nubrakes-ai-copilot.svg",
-            alt: "NuBrakes AI Copilot",
-            style: {
-              width: compact ? 30 : 34,
-              height: compact ? 30 : 34,
-              objectFit: "contain",
-              background: "#fff",
-              padding: 4,
-              borderRadius: 8,
-              flexShrink: 0
-            }
-          }),
+          React.createElement(
+            "span",
+            {
+              "aria-hidden": true,
+              style: {
+                width: compact ? 30 : 34,
+                height: compact ? 30 : 34,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#fff",
+                color: "#0E2468",
+                fontSize: compact ? 11 : 12,
+                fontWeight: 850,
+                letterSpacing: "-0.04em",
+                borderRadius: 8,
+                flexShrink: 0
+              }
+            },
+            "AI"
+          ),
           React.createElement(
             "div",
             { style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 } },
@@ -5666,6 +6150,7 @@ function Dashboard() {
   const [tab, setTab] = useState("overview");
   const [trendKey, setTrendKey] = useState("revenue");
   const [chartType, setChartType] = useState("line");
+  const [showChannelMix, setShowChannelMix] = useState(true);
   const [trendView, setTrendView] = useState("absolute");
   const [trendDimension, setTrendDimension] = useState("overall");
   const [selectedTrendMarkets, setSelectedTrendMarkets] = useState([]);
@@ -5781,6 +6266,10 @@ useEffect(() => {
 }, [overviewMonthOptions, overviewMonth]);
 
   const series = useMemo(() => buildTimeSeries(filtered, period), [filtered, period]);
+  const channelMixSeries = useMemo(
+    () => buildChannelMixSeries(filtered, period, trendKey),
+    [filtered, period, trendKey]
+  );
 
 const overviewScopedRows = useMemo(() => {
   const monthKey = overviewMonth || getLatestMonthKey(rawData);
@@ -5869,6 +6358,12 @@ const prev = useMemo(() => {
   const selMetric = METRICS.find(m => m.key === trendKey) || METRICS[0];
   const shareBlocked = SHARE_INCOMPATIBLE.has(trendKey);
   const selectedMetricPacing = pacingByMetric[trendKey] || null;
+  const channelMixEligible =
+    trendView === "absolute" &&
+    trendDimension === "overall" &&
+    chanCat === "All Channels" &&
+    ADDITIVE_METRICS.has(trendKey) &&
+    channelMixSeries.channels.length > 0;
 
   const activeChannels = channelShareData.groups.filter(c =>
     channelShareData.series.some(d => (d[c] || 0) > 0)
@@ -6472,39 +6967,55 @@ const prev = useMemo(() => {
                   )
                 )
               ),
-              React.createElement(
-                "div",
-                {
-                  style: {
-                    display: "flex",
-                    gap: 4,
-                    background: "#f1f5f9",
-                    borderRadius: 8,
-                    padding: 3
-                  }
-                },
-                [["line", "╱ Line"], ["bar", "▬ Bar"]].map(([t, lbl]) =>
-                  React.createElement(
-                    "button",
+              channelMixEligible && showChannelMix
+                ? React.createElement(
+                    "span",
                     {
-                      key: t,
-                      onClick: () => setChartType(t),
                       style: {
-                        padding: "5px 12px",
-                        borderRadius: 6,
-                        border: "none",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        background: chartType === t ? "#fff" : "transparent",
-                        color: chartType === t ? "#111827" : "#9ca3af",
-                        boxShadow: chartType === t ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                        padding: "6px 10px",
+                        borderRadius: 7,
+                        background: "#f1f5f9",
+                        color: "#475569",
+                        fontSize: 11,
+                        fontWeight: 650,
+                        whiteSpace: "nowrap"
                       }
                     },
-                    lbl
+                    "Total line + stacked channels"
                   )
-                )
-              )
+                : React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        gap: 4,
+                        background: "#f1f5f9",
+                        borderRadius: 8,
+                        padding: 3
+                      }
+                    },
+                    [["line", "╱ Line"], ["bar", "▬ Bar"]].map(([t, lbl]) =>
+                      React.createElement(
+                        "button",
+                        {
+                          key: t,
+                          onClick: () => setChartType(t),
+                          style: {
+                            padding: "5px 12px",
+                            borderRadius: 6,
+                            border: "none",
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            background: chartType === t ? "#fff" : "transparent",
+                            color: chartType === t ? "#111827" : "#9ca3af",
+                            boxShadow: chartType === t ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                          }
+                        },
+                        lbl
+                      )
+                    )
+                  )
             ),
             React.createElement(
   "div",
@@ -6600,6 +7111,58 @@ const prev = useMemo(() => {
       )
     )
   ),
+
+  channelMixEligible
+    ? React.createElement(
+        "button",
+        {
+          type: "button",
+          role: "switch",
+          "aria-checked": showChannelMix,
+          onClick: () => setShowChannelMix(value => !value),
+          style: {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "5px 10px 5px 7px",
+            border: "1px solid " + (showChannelMix ? "#c7d2fe" : "#e2e8f0"),
+            borderRadius: 999,
+            background: showChannelMix ? "#eef2ff" : "#fff",
+            color: showChannelMix ? "#4338ca" : "#64748b",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: "pointer"
+          }
+        },
+        React.createElement(
+          "span",
+          {
+            style: {
+              position: "relative",
+              width: 26,
+              height: 15,
+              borderRadius: 999,
+              background: showChannelMix ? "#6366f1" : "#cbd5e1",
+              transition: "background 160ms ease"
+            }
+          },
+          React.createElement("span", {
+            style: {
+              position: "absolute",
+              top: 2,
+              left: showChannelMix ? 13 : 2,
+              width: 11,
+              height: 11,
+              borderRadius: "50%",
+              background: "#fff",
+              boxShadow: "0 1px 2px rgba(15,23,42,0.25)",
+              transition: "left 160ms ease"
+            }
+          })
+        ),
+        "Channel mix"
+      )
+    : null,
 
   trendView === "share" && !shareBlocked
     ? React.createElement(
@@ -6702,6 +7265,26 @@ const prev = useMemo(() => {
   selectedGroups: selectedTrendMarkets,
   onSelectedGroupsChange: setSelectedTrendMarkets
 })
+
+  : channelMixEligible && showChannelMix
+
+  ? React.createElement(ChannelMixTrendChart, {
+
+      data: series,
+
+      mixData: channelMixSeries.data,
+
+      channels: channelMixSeries.channels,
+
+      metricKey: trendKey,
+
+      metric: selMetric,
+
+      period,
+
+      pacing: selectedMetricPacing
+
+    })
 
   : React.createElement(TrendChart, {
 
@@ -6998,16 +7581,23 @@ const prev = useMemo(() => {
           border: "none"
         }
       },
-      React.createElement("img", {
-        src: "/forms.png",
-        alt: "forms",
-        style: {
-          width: 28,
-          height: 28,
-          objectFit: "contain",
-          display: "block"
-        }
-      })
+      React.createElement(
+        "span",
+        {
+          "aria-hidden": true,
+          style: {
+            width: 28,
+            height: 28,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#0f172a",
+            fontSize: 19,
+            fontWeight: 700
+          }
+        },
+        "✎"
+      )
     ),
 
     React.createElement(
@@ -7045,16 +7635,24 @@ const prev = useMemo(() => {
             React.createElement("line", { x1: "18", y1: "6", x2: "6", y2: "18" }),
             React.createElement("line", { x1: "6", y1: "6", x2: "18", y2: "18" })
           )
-        : React.createElement("img", {
-            src: "/nubrakes-ai-copilot.svg",
-            alt: "Copilot",
-            style: {
-              width: 28,
-              height: 28,
-              objectFit: "contain",
-              display: "block"
-            }
-          })
+        : React.createElement(
+            "span",
+            {
+              "aria-hidden": true,
+              style: {
+                width: 28,
+                height: 28,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#0E2468",
+                fontSize: 11,
+                fontWeight: 850,
+                letterSpacing: "-0.04em"
+              }
+            },
+            "AI"
+          )
     ),
 
     React.createElement(
