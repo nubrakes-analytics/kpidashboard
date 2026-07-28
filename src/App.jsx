@@ -5085,6 +5085,7 @@ const VIOC_BUCKET_COLORS = [
 const VIOC_TABLE_COLUMNS = [
   { key: "date", label: "Date" },
   { key: "market", label: "Market" },
+  { key: "channel", label: "Channel" },
   { key: "zip", label: "ZIP" },
   { key: "inquiry_id", label: "Inquiry ID" },
   { key: "vioc_bucket", label: "VIOC Bucket" },
