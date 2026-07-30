@@ -5093,6 +5093,7 @@ const VIOC_TABLE_COLUMNS = [
   { key: "vioc_language", label: "VIOC Language" },
   { key: "medium", label: "Medium" },
   { key: "campaign_name", label: "Campaign Name" },
+  { key: "search_term", label: "Search Term" },
   { key: "source", label: "Source" },
   { key: "device_type", label: "Device Type" },
   { key: "marketedservice", label: "Marketed Service" },
