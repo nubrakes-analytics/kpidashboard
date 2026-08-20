@@ -5100,7 +5100,8 @@ const VIOC_TABLE_COLUMNS = [
   { key: "status", label: "Status" },
   { key: "revenue_pre_tax", label: "Revenue (Pre-Tax)", numeric: true },
   { key: "serviceurgency", label: "Service Urgency" },
-  { key: "vehicle", label: "Vehicle (Year / Make / Model)" }
+  { key: "vehicle", label: "Vehicle (Year / Make / Model)" },
+  { key: "vin", label: "VIN" }
 ];
 
 function viocDateKey(value) {
